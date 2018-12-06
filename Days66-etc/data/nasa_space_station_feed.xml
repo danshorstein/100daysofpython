@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+
+<channel>
+	<title>ISS On-Orbit Status Report</title>
+	<atom:link href="https://blogs.nasa.gov/stationreport/feed/" rel="self" type="application/rss+xml" />
+	<link>https://blogs.nasa.gov/stationreport</link>
+	<description></description>
+	<lastBuildDate>Wed, 05 Dec 2018 15:20:21 +0000</lastBuildDate>
+	<language>en-US</language>
+	<sy:updatePeriod>hourly</sy:updatePeriod>
+	<sy:updateFrequency>1</sy:updateFrequency>
+	<generator>https://blogs.nasa.gov?v=4.8.3</generator>
+	<item>
+		<title>ISS Daily Summary Report – 12/04/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/12/04/iss-daily-summary-report-12042018/</link>
+		<pubDate>Tue, 04 Dec 2018 16:00:28 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[December]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4550</guid>
+		<description><![CDATA[SpaceX (SpX)-16 Launch Status:  SpX-16 launch attempt was delayed from today’s opportunity due to a cargo issue. The next launch attempt is December 5 in order to accommodate replacement of late load cargo. Liftoff on December 5 is planned for 12:16 PM CT with rendezvous and capture planned for Saturday, December 8. Should SpX-16 still &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 12/03/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/12/03/iss-daily-summary-report-12032018/</link>
+		<pubDate>Mon, 03 Dec 2018 16:00:18 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[December]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4547</guid>
+		<description><![CDATA[57 Soyuz (57S) Launch and Docking: The 57S vehicle launched from the Baikonur Cosmodrome this morning at 5:31 CT and completed a nominal docking to the ISS at 11:33 CT. The 57S crew, Oleg Kononenko, David Saint-Jacques, and Anne McClain, returned ISS to 6-crew operations after hatch opening at 13:38 CT. This afternoon, the entire &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/30/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/30/iss-daily-summary-report-11302018/</link>
+		<pubDate>Fri, 30 Nov 2018 16:00:25 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4545</guid>
+		<description><![CDATA[Cemsica sample exchange: Today the crew removed the processed first Cemsica science cartridge from the SUBSA facility and inserted the second science cartridge.  Cemsica tests a novel approach of using particles of calcium-silicate (C-S) to synthesize nanoporous membranes (those with pores 100 nanometers or smaller) that can separate carbon dioxide molecules from air or other &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/29/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/29/iss-daily-summary-report-11292018/</link>
+		<pubDate>Thu, 29 Nov 2018 16:00:29 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4542</guid>
+		<description><![CDATA[JEM Airlock (JEMAL) Depressurization: The JEM Airlock was depressurized in preparation for the transfer of the NanoRacks External Platform Inserts (NREP) back to the Exposed Facility Unit (EFU) 4 location. The NREP was brought inside ISS earlier this week so the crew could exchange the sortie 3 payload for the sortie 4 payload. Each NREP &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/28/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/28/iss-daily-summary-report-11282018/</link>
+		<pubDate>Wed, 28 Nov 2018 16:00:11 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4540</guid>
+		<description><![CDATA[Cemsica Sample Exchange:  Today the crew removed the calibration cartridge from the SUBSA facility and inserted the first Cemsica science cartridge for processing. Cemsica tests a novel approach of using particles of calcium-silicate (C-S) to synthesize nanoporous membranes (those with pores 100 nanometers or smaller) that can separate carbon dioxide molecules from air or other &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/27/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/27/iss-daily-summary-report-11272018/</link>
+		<pubDate>Tue, 27 Nov 2018 16:00:04 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4538</guid>
+		<description><![CDATA[CASIS PCG-16 card fill: The crew continued the PCG Card Micro-G card fill that was not fully completed the previous day. This was performed using some of today’s microscope observation time due to the relatively short lifetime of the protein precipitant solution. Crystallization of LRRK2 Under Microgravity Conditions-2 (CASIS PCG 16) evaluates growth of Leucine-rich &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/26/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/26/iss-daily-summary-report-11262018/</link>
+		<pubDate>Mon, 26 Nov 2018 16:00:53 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4535</guid>
+		<description><![CDATA[At Home in Space (AHIS):  The crew completed an AHIS questionnaire this morning.  This Canadian Space Agency investigation assesses culture, values, and psychosocial adaptation of astronauts to a space environment shared by multinational crews on long-duration missions. It is hypothesized that astronauts develop a shared space culture that is an adaptive strategy for handling cultural &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/23/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/23/iss-daily-summary-report-11232018/</link>
+		<pubDate>Fri, 23 Nov 2018 16:00:39 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4533</guid>
+		<description><![CDATA[Food Acceptability Questionnaire: The crew performed the Food Acceptability questionnaire. Food Acceptability seeks to determine the impact of repetitive consumption of food currently available from the spaceflight food system.  The results will be used in developing strategies to improve food system composition to support crew health and performance on long duration missions. Microgravity Investigation of &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/21/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/21/iss-daily-summary-report-11212018/</link>
+		<pubDate>Wed, 21 Nov 2018 16:00:59 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4531</guid>
+		<description><![CDATA[Loop Heat Pipe Radiator (LHPR) removal: Following a successful completion of the LHPR experiment on GMT 320, today the crew removed it from the MPEP and stowed the hardware.  The Multi-Purpose Experiment Platform (MPEP) was then removed from the Japanese Experiment Module Air Lock (JEMAL) slide table and troubleshooting was performed on a limit switch &#8230; ]]></description>
+		</item>
+		<item>
+		<title>ISS Daily Summary Report – 11/20/2018</title>
+		<link>https://blogs.nasa.gov/stationreport/2018/11/20/iss-daily-summary-report-11202018/</link>
+		<pubDate>Tue, 20 Nov 2018 16:00:59 +0000</pubDate>
+		<dc:creator><![CDATA[Bill Keeter]]></dc:creator>
+				<category><![CDATA[2018]]></category>
+		<category><![CDATA[November]]></category>
+
+		<guid isPermaLink="false">https://blogs.nasa.gov/stationreport/?p=4529</guid>
+		<description><![CDATA[ISS 20th Anniversary:  The largest and most complex international construction project in space began in Kazakhstan 20 years ago today. Atop its Proton rocket, on November. 20, 1998, the Zarya Functional Cargo Block (FGB) lifted off its launch pad at the Baikonur Cosmodrome. The launch of the first element of the ISS kicked off an &#8230; ]]></description>
+		</item>
+	</channel>
+</rss>
