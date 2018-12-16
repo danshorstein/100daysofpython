@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 class FSLineItem:
     def __init__(self, account_name, balance, normal_balance, fs_line_item):
         self.account_name = account_name
@@ -17,9 +19,17 @@ class FSLineItem:
         Account: {self.account_name}
         Type: {self.__name__}
         Balance: {self.balance}
-        FS Line Item: {self.fs_line_item}
-        '''
+        FS Line Item: {self.fs_line_item}'''
 
+
+class TrialBalance:
+    # Holds the balances of all accounts
+    def __init__(self):
+        self.trial_balance = defaultdict(list)
+
+    def __repr__(self):
+        for act, bal in self.trial_balance.items:
+            return(f'Account {act} has a balance of {bal}')
 
 class Asset(FSLineItem):
     def __init__(self, account_name, balance=0, normal_balance='Debit', fs_line_item='Total Assets', tangible=True):
@@ -39,10 +49,12 @@ class Equity(FSLineItem):
         super().__init__(account_name, balance, normal_balance, fs_line_item)
         self.__name__ = 'Equity'
 
+
 class Transaction:
-    def __init__(self, accounts, amounts):
+    def __init__(self, accounts='', amounts=''):
         self.accounts = list(accounts)
         self.amounts = list(amounts)
+        self.trial_balance = TrialBalance()
     
     def add_line(self, account, amount):
         self.accounts.append(account)
@@ -56,6 +68,7 @@ class Transaction:
                     act.debit(amt)
                 else:
                     act.credit(amt * -1)
+            self.trial_balance[act] += amt   
 
         else:
             print('make sure your debits = credits!!!')
@@ -66,15 +79,17 @@ class Transaction:
 
 if __name__ == '__main__':
     # Initiate accounts
-
-    cash = Asset('cash')
-    accounts_payable = Liability('accounts_payable')
-    equity = Equity('equity')
+    cash = Asset('Cash')
+    inventory = Asset('Inventory')
+    accounts_receivable = Asset('Accounts Receivable')
+    accounts_payable = Liability('Accounts Payable')
+    equity = Equity('Equity')
     
     # Book an entry
-    entry = Transaction([cash, accounts_payable, equity], [10000, -2000, -8000])
+    entry = Transaction()
+    entry.add_line(cash, 10000)
+    entry.add_line(accounts_payable, -2000)
+    entry.add_line(equity, -8000)
     entry.enter()
 
-    print(cash)
-    print(accounts_payable)
-    print(equity)
+    print(TrialBalance())
