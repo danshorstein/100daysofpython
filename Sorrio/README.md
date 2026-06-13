@@ -6,12 +6,28 @@ grades how the run is going. Flip to Manual any time and take the wheel.
 
 Everyone in the cast has a rhyming name.
 
-## Run it
+It's a **single self-contained `index.html`** (HTML + CSS + JS inlined,
+no dependencies), so it runs anywhere — including your phone.
 
-No build, no dependencies. Just open the file:
+## Try it on your phone
+
+Because it's one static file, any HTML preview service can serve it.
+Tap this on your phone (works while the branch is pushed):
+
+```
+https://htmlpreview.github.io/?https://github.com/danshorstein/100daysofpython/blob/claude/sorrio-side-scroller-lozsjy/Sorrio/index.html
+```
+
+For a permanent link, enable **GitHub Pages** for the repo
+(Settings → Pages → deploy from this branch / `master`), then visit
+`https://danshorstein.github.io/100daysofpython/Sorrio/`.
+
+On touch devices, on-screen **◀ ▶ JUMP** buttons appear automatically —
+tapping one drops you into Manual mode.
+
+## Run it locally
 
 ```bash
-# from the repo root
 open Sorrio/index.html        # macOS
 xdg-open Sorrio/index.html    # Linux
 # or serve it
