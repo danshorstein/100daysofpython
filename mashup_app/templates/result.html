@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="result">
+  <h2>Your mashup is ready 🎉</h2>
+
+  <ul class="stats">
+    <li>Track A tempo: <strong>{{ bpm_a }} BPM</strong></li>
+    <li>Track B tempo: <strong>{{ bpm_b }} BPM</strong></li>
+    {% if synced and applied_bpm %}
+      <li>Synced to: <strong>{{ applied_bpm }} BPM</strong></li>
+    {% else %}
+      <li>Tempo sync: <strong>off</strong></li>
+    {% endif %}
+    <li>Length: <strong>{{ duration_s }} s</strong></li>
+  </ul>
+
+  <audio controls src="{{ url_for('serve_output', filename=filename) }}"></audio>
+
+  <div class="actions">
+    <a class="go" href="{{ url_for('download_output', filename=filename) }}">⬇ Download</a>
+    <a class="secondary" href="{{ url_for('index') }}">Make another</a>
+  </div>
+</section>
+{% endblock %}
