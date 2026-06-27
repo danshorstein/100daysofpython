@@ -1,0 +1,9 @@
+uploads/
+outputs/
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.m4a
+__pycache__/
+.venv/

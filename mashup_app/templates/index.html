@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<form action="{{ url_for('make_mashup') }}" method="post" enctype="multipart/form-data" class="mashup-form">
+
+  <div class="tracks">
+    {% for letter, label in [("a", "Track A"), ("b", "Track B")] %}
+    <fieldset class="track">
+      <legend>{{ label }}</legend>
+
+      <label class="file">
+        Audio file
+        <input type="file" name="file_{{ letter }}" accept="audio/*" required>
+      </label>
+
+      <div class="grid">
+        <label>Start (s)
+          <input type="number" name="start_{{ letter }}" step="0.1" min="0" placeholder="0">
+        </label>
+        <label>End (s)
+          <input type="number" name="end_{{ letter }}" step="0.1" min="0" placeholder="end">
+        </label>
+        <label>Volume (dB)
+          <input type="number" name="gain_{{ letter }}" step="0.5" placeholder="0">
+        </label>
+        <label>Place at (s)
+          <input type="number" name="offset_{{ letter }}" step="0.1" min="0" placeholder="0">
+        </label>
+        <label>Fade in (s)
+          <input type="number" name="fadein_{{ letter }}" step="0.1" min="0" placeholder="0">
+        </label>
+        <label>Fade out (s)
+          <input type="number" name="fadeout_{{ letter }}" step="0.1" min="0" placeholder="0">
+        </label>
+      </div>
+
+      <label class="full">
+        Volume automation <span class="hint">one per line: <code>start-end: gain_dB</code> &nbsp;(e.g. <code>0-15: -6</code>, <code>60-: -120</code> to mute)</span>
+        <textarea name="volseg_{{ letter }}" rows="3" placeholder="0-10: -6&#10;30-45: 3"></textarea>
+      </label>
+    </fieldset>
+    {% endfor %}
+  </div>
+
+  <fieldset class="options">
+    <legend>Mix options</legend>
+    <label class="checkbox">
+      <input type="checkbox" name="sync" checked> Sync tempo (time-stretch to match BPM)
+    </label>
+    <label>Tempo target
+      <select name="tempo_target">
+        <option value="match_a">Match Track A's tempo</option>
+        <option value="match_b">Match Track B's tempo</option>
+        <option value="120">Force 120 BPM</option>
+        <option value="128">Force 128 BPM</option>
+        <option value="140">Force 140 BPM</option>
+      </select>
+    </label>
+    <label>Output format
+      <select name="output_format">
+        <option value="mp3">MP3</option>
+        <option value="wav">WAV</option>
+        <option value="ogg">OGG</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <button type="submit" class="go">Create mashup</button>
+  <p class="note">Processing can take a little while &mdash; tempo-syncing analyses and stretches the audio.</p>
+</form>
+{% endblock %}
