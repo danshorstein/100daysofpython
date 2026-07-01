@@ -68,6 +68,44 @@ The tests generate synthetic percussive tracks at known tempos, so they verify
 BPM detection, time-stretching, volume automation and the full mashup pipeline
 without needing any audio files committed to the repo.
 
+## Deploy it (use it from your phone)
+
+The app is a normal responsive web page, so once it's hosted anywhere it works
+in a phone browser. **Vercel is not suitable** — it's for serverless/static
+sites, and this app needs a long-running Python server plus ffmpeg and the
+large librosa/numba stack. Use a container host instead.
+
+### Render (recommended, free tier)
+
+A `Dockerfile` and `render.yaml` are included, so:
+
+1. Push this repo to GitHub.
+2. Go to <https://render.com> → **New → Blueprint** → select this repo.
+3. Render reads `mashup_app/render.yaml`, builds the image (ffmpeg included)
+   and deploys.
+4. Open the `https://<name>.onrender.com` URL on your phone — add it to your
+   home screen for an app-like icon.
+
+The free instance sleeps after ~15 min idle (first request then takes ~30s to
+wake). Upgrade to a paid instance to keep it always-on.
+
+### Anywhere with Docker (Railway, Fly.io, a VPS)
+
+```bash
+cd mashup_app
+docker build -t mashup-maker .
+docker run -p 8000:8000 mashup-maker
+# open http://localhost:8000  (or the host's public URL)
+```
+
+The container runs `gunicorn` with a 300s timeout so long songs don't get cut
+off mid-processing.
+
+> **Note:** uploaded files and generated mashups live on the container's
+> ephemeral disk. That's fine for personal use (each mashup is produced on the
+> fly), but files won't survive a restart. Add a persistent disk / object
+> storage if you need them to stick around.
+
 ## Volume automation syntax
 
 In the "Volume automation" box for a track, one rule per line:

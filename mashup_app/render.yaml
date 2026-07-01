@@ -1,0 +1,21 @@
+# Render Blueprint — deploy the mashup app with one click.
+#
+# How to use:
+#   1. Push this repo to GitHub (already done).
+#   2. Go to https://render.com → New → Blueprint → pick this repo.
+#   3. Render reads this file, builds the Docker image and deploys.
+#   4. Open the resulting https://<name>.onrender.com URL on your phone.
+#
+# The free plan sleeps after ~15 min idle; the first request then takes
+# ~30s to wake. Bump to a paid instance to keep it always-on.
+services:
+  - type: web
+    name: mashup-maker
+    runtime: docker
+    rootDir: mashup_app
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: MASHUP_SECRET_KEY
+        generateValue: true    # random secret for Flask sessions/flash
+    healthCheckPath: /
