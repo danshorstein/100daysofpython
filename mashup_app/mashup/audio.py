@@ -159,21 +159,49 @@ def detect_bpm(source) -> float:
     return float(np.atleast_1d(tempo)[0])
 
 
+def _rubberband_available() -> bool:
+    """True when both the ``rubberband`` CLI and pyrubberband are installed.
+
+    Rubber Band produces noticeably cleaner stretches than a phase vocoder.
+    On macOS: ``brew install rubberband && pip install pyrubberband``.
+    """
+    from shutil import which
+
+    if which("rubberband") is None:
+        return False
+    try:
+        import pyrubberband  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def time_stretch(seg: AudioSegment, rate: float) -> AudioSegment:
     """Stretch ``seg`` by ``rate`` while preserving pitch.
 
     ``rate > 1`` makes the audio *faster* (higher tempo, shorter), ``rate < 1``
-    makes it slower.  Uses librosa's phase-vocoder implementation.
+    makes it slower.  Prefers Rubber Band (studio quality) when installed and
+    falls back to librosa's phase vocoder otherwise.
     """
-    import librosa
-
     if rate <= 0:
         raise ValueError("rate must be positive")
     if abs(rate - 1.0) < 1e-3:
         return seg
 
     y, sr = segment_to_float(seg)
-    stretched = librosa.effects.time_stretch(y, rate=rate)
+
+    if _rubberband_available():
+        import pyrubberband
+
+        # pyrubberband wants (n,) or (n, channels); we carry (channels, n).
+        y_rb = y.T if y.ndim > 1 else y
+        stretched = pyrubberband.time_stretch(y_rb, sr, rate)
+        stretched = stretched.T if stretched.ndim > 1 else stretched
+    else:
+        import librosa
+
+        stretched = librosa.effects.time_stretch(y, rate=rate)
+
     return float_to_segment(stretched, sr, sample_width=seg.sample_width)
 
 
