@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>the flame field</title>
+<style>
+  :root{ color-scheme: dark; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:#020304; overflow:hidden; overscroll-behavior:none;
+    font-family:'Courier New',monospace; color:#cfe8e6;
+    touch-action:none;
+  }
+  #stage{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  }
+  #glow{
+    position:absolute; inset:0; pointer-events:none;
+    filter: blur(6px) saturate(1.3); opacity:0.55; mix-blend-mode: screen;
+  }
+  canvas{ display:block; image-rendering:auto; }
+  #view{ position:relative; }
+  #ui{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    display:flex; flex-direction:column; gap:8px;
+    pointer-events:none;
+  }
+  #toolbar{
+    display:flex; gap:8px; justify-content:center; pointer-events:auto;
+  }
+  .tool{
+    position:relative; width:56px; height:56px; border-radius:50%;
+    background:rgba(10,18,20,0.72); border:1px solid rgba(150,220,220,0.18);
+    color:#9fd8d4; font-size:20px; display:flex; align-items:center; justify-content:center;
+    backdrop-filter: blur(3px);
+    transition: border-color .2s, background .2s, opacity .2s;
+    opacity:0.45;
+  }
+  .tool.unlocked{ opacity:1; }
+  .tool.active{ border-color:#ffcf8a; color:#ffe3b0; background:rgba(60,40,10,0.55); box-shadow:0 0 14px rgba(255,180,90,0.35); }
+  .tool .ring{
+    position:absolute; inset:-3px; border-radius:50%; pointer-events:none;
+    border:2px solid rgba(255,255,255,0.15);
+  }
+  .tool .fill{
+    position:absolute; inset:-3px; border-radius:50%; pointer-events:none;
+    border:2px solid #6fe3d6; clip-path: inset(0 0 0 0);
+    opacity:0.85;
+  }
+  .tool .lock{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; color:#4a5a5c; }
+  #topbar{
+    position:fixed; top:0; left:0; right:0; z-index:20;
+    padding: calc(8px + env(safe-area-inset-top,0px)) 10px 6px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none;
+  }
+  #readout{
+    font-size:11px; color:#7fb; opacity:0; transition:opacity .4s; letter-spacing:0.5px;
+    pointer-events:none; text-shadow:0 0 6px rgba(100,255,220,0.6);
+    max-width:60vw;
+  }
+  #codexBtn, #listenBtn{
+    pointer-events:auto; width:40px;height:40px;border-radius:50%;
+    background:rgba(10,18,20,0.6); border:1px solid rgba(150,220,220,0.18);
+    color:#9fd8d4; font-size:16px; display:flex; align-items:center; justify-content:center;
+  }
+  #listenBtn.active{ color:#ffe3b0; border-color:#ffcf8a; }
+  #topRight{ display:flex; gap:8px; pointer-events:auto; }
+
+  #codex{
+    position:fixed; inset:0; z-index:40; background:rgba(2,4,5,0.94);
+    transform:translateY(100%); transition:transform .35s ease;
+    padding: calc(16px + env(safe-area-inset-top,0px)) 18px 24px;
+    overflow-y:auto;
+  }
+  #codex.open{ transform:translateY(0); }
+  #codex h1{ font-size:15px; letter-spacing:3px; color:#ffcf8a; font-weight:400; margin:0 0 14px; }
+  .entry{ margin-bottom:16px; border-left:2px solid rgba(255,207,138,0.3); padding-left:10px; }
+  .entry .name{ font-size:13px; color:#ffe3b0; letter-spacing:1px; }
+  .entry .desc{ font-size:12px; color:#8fc; opacity:0.8; margin-top:3px; line-height:1.5; }
+  .entry.locked .name{ color:#3d4c4e; }
+  .entry.locked .desc{ display:none; }
+  #stats{ margin-top:20px; font-size:10px; color:#4a5a5c; line-height:1.8; }
+  #closeCodex{
+    position:absolute; top:calc(14px + env(safe-area-inset-top,0px)); right:16px;
+    width:34px;height:34px;border-radius:50%; background:rgba(255,255,255,0.06);
+    color:#cfe8e6; display:flex;align-items:center;justify-content:center; font-size:16px;
+  }
+
+  #morph{
+    position:fixed; inset:0; z-index:30; background:rgba(2,6,7,0.88);
+    display:none; align-items:center; justify-content:center; flex-direction:column;
+  }
+  #morph.open{ display:flex; }
+  #morphCanvas{ touch-action:none; }
+  #morphHint{ font-size:11px; color:#6fa; opacity:0.7; margin-top:14px; letter-spacing:1px; text-align:center; padding:0 20px;}
+  #morphClose{
+    position:absolute; top:calc(14px + env(safe-area-inset-top,0px)); right:16px;
+    width:34px;height:34px;border-radius:50%; background:rgba(255,255,255,0.06);
+    color:#cfe8e6; display:flex;align-items:center;justify-content:center; font-size:16px;
+  }
+
+  #choice{
+    position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.75);
+    display:none; align-items:center; justify-content:center; flex-direction:column; gap:22px;
+  }
+  #choice.open{ display:flex; }
+  #choice .prompt{ font-size:12px; opacity:0.85; letter-spacing:1px; text-align:center; max-width:80vw; color:#cfe8e6;}
+  #choiceBtns{ display:flex; gap:30px; }
+  .choiceBtn{
+    width:110px; height:110px; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-size:13px; letter-spacing:1px; gap:6px; border:1px solid rgba(255,255,255,0.2);
+  }
+  #keepTorch{ background:radial-gradient(circle at 50% 40%, #16323a, #06181c); color:#9fe0d8; }
+  #takeFlame{ background:radial-gradient(circle at 50% 40%, #4a1c0a, #1a0705); color:#ffb877; }
+
+  #veil{
+    position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; z-index:60;
+    transition:opacity 1.2s;
+  }
+  #boot{
+    position:fixed; inset:0; z-index:70; background:#020304; display:flex; align-items:center; justify-content:center;
+    color:#3d5a58; font-size:11px; letter-spacing:4px; transition:opacity 1s;
+  }
+</style>
+</head>
+<body>
+<div id="boot">· · ·</div>
+<div id="veil"></div>
+
+<div id="topbar">
+  <div id="readout"></div>
+  <div id="topRight">
+    <button id="listenBtn" title="listen">◎</button>
+    <button id="codexBtn" title="codex">☰</button>
+  </div>
+</div>
+
+<div id="stage">
+  <div id="view">
+    <canvas id="glow"></canvas>
+    <canvas id="sim"></canvas>
+  </div>
+</div>
+
+<div id="ui">
+  <div id="toolbar"></div>
+</div>
+
+<div id="codex">
+  <button id="closeCodex">×</button>
+  <h1>· CODEX ·</h1>
+  <div id="entries"></div>
+  <div id="stats"></div>
+</div>
+
+<div id="morph">
+  <button id="morphClose">×</button>
+  <canvas id="morphCanvas"></canvas>
+  <div id="morphHint"></div>
+</div>
+
+<div id="choice">
+  <div class="prompt" id="choicePrompt"></div>
+  <div id="choiceBtns">
+    <button class="choiceBtn" id="keepTorch">◐<br>hold</button>
+    <button class="choiceBtn" id="takeFlame">◉<br>go</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================================
+   THE FLAME FIELD
+   A bioelectric cellular substrate the player can perturb, wound, condition
+   and re-target, but never directly command. Every visible behavior below is
+   produced by the update loop in Field.step() — nothing is pre-scripted.
+   ========================================================================== */
+
+// ---------------------------------------------------------------- constants
+const W = 52, H = 80;                 // grid resolution (portrait, cheap enough for 60fps on typed arrays)
+const N = W * H;
+const SUBSTEPS = 2;                   // sim steps per rendered frame
+const DT = 0.012;                     // tuned so sim-time tracks roughly real-time — healing
+                                       // and drift should be watchable, not an instant snap
+
+const T1 = 0.28, T2 = 0.62;           // differentiation thresholds on V
+const CANON = [0, 0.4, 0.8, -0.4, -0.8]; // canonical potential per locked type (0=undiff,1..4 types)
+
+const K_LEAK = 0.12;
+const K_BISTABLE = 0.15;              // gentle excitability texture — must not dominate the homeostatic pull toward S
+const K_HOME_BASE = 0.55;
+const COUPLE_GAIN = 2.6;
+const DECOUPLE_THRESH = 0.55;
+const DECOUPLE_RATE = 0.5;
+const RECOUPLE_RATE = 0.12;
+const REVIVE_THRESH = 0.55;
+const COLLAPSE_V = 0.9;
+const NECROSIS_RATE = 0.6;
+
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const idx = (x,y)=> y*W+x;
+
+function classify(v){
+  if(v>T2) return 2;
+  if(v>T1) return 1;
+  if(v<-T2) return 4;
+  if(v<-T1) return 3;
+  return 0;
+}
+
+// simple seeded PRNG so "Fracture" archetype is reproducible
+function mulberry32(a){
+  return function(){
+    a|=0; a=(a+0x6D2B79F5)|0;
+    let t=Math.imul(a^(a>>>15),1|a);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t;
+    return ((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+
+// -------------------------------------------------------------- field state
+const Field = {
+  V: new Float32Array(N),
+  Vn: new Float32Array(N),
+  type: new Uint8Array(N),
+  typeTimer: new Float32Array(N),
+  plasticity: new Float32Array(N),
+  coupling: new Float32Array(N),
+  alive: new Uint8Array(N),
+  S: new Float32Array(N),           // the setpoint / attractor — editable, independent of local rules
+  assoc: new Float32Array(N),       // learned cue->stressor association per cell
+  eligibility: new Float32Array(N), // decaying trace of recent cue exposure
+  cueFlash: new Float32Array(N),    // transient anticipatory-response visual (for renderer)
+  t: 0,
+
+  init(){
+    const rnd = Math.random;
+    for(let i=0;i<N;i++){
+      this.V[i] = (rnd()-0.5)*0.3;
+      this.type[i] = 0;
+      this.plasticity[i] = 1;
+      this.coupling[i] = 0.8;
+      this.alive[i] = 1;
+    }
+    this.S.set(Archetypes.list[0].template); // start already resting near "Orb"
+  },
+
+  step(dt, risk, distance=0){
+    const V=this.V, Vn=this.Vn, type=this.type, timer=this.typeTimer,
+          plas=this.plasticity, coup=this.coupling, alive=this.alive,
+          S=this.S, assoc=this.assoc, elig=this.eligibility, flash=this.cueFlash;
+
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W;x++){
+        const i = idx(x,y);
+
+        if(!alive[i]){
+          // dead tissue: near-zero activity, but can be revived by living neighbor pressure
+          let pressure=0;
+          if(x>0 && alive[idx(x-1,y)]) pressure += coup[idx(x-1,y)];
+          if(x<W-1 && alive[idx(x+1,y)]) pressure += coup[idx(x+1,y)];
+          if(y>0 && alive[idx(x,y-1)]) pressure += coup[idx(x,y-1)];
+          if(y<H-1 && alive[idx(x,y+1)]) pressure += coup[idx(x,y+1)];
+          Vn[i] = V[i]*0.9;
+          // mid-metamorphosis (risk>1), the tissue's ordinary self-repair is compromised —
+          // it takes real neighbor strength to pull a cell back, not just proximity
+          if(pressure > REVIVE_THRESH*risk){
+            alive[i]=1; type[i]=0; plas[i]=1; timer[i]=0;
+            Vn[i] = pressure*0.05;
+          }
+          continue;
+        }
+
+        // ---- gather neighbor flux (diffusion through gap junctions) ----
+        let flux=0, mismatch=0, nCount=0;
+        const cSelf = coup[i];
+        const tryN = (ni)=>{
+          if(!alive[ni]){ return; }
+          const cEdge = (cSelf+coup[ni])*0.5;
+          flux += cEdge*(V[ni]-V[i]);
+          mismatch += Math.abs(V[ni]-V[i]);
+          nCount++;
+        };
+        if(x>0) tryN(idx(x-1,y));
+        if(x<W-1) tryN(idx(x+1,y));
+        if(y>0) tryN(idx(x,y-1));
+        if(y<H-1) tryN(idx(x,y+1));
+        if(nCount>0) mismatch/=nCount;
+
+        // ---- local reaction: leaky + bistable excitable medium (texture, not dominant) ----
+        const react = -K_LEAK*V[i] - K_BISTABLE*V[i]*(V[i]-0.5)*(V[i]+0.5);
+
+        // ---- homeostasis: the goal-directed term. pulls V toward the setpoint S at a fixed
+        // rate, so a settled pattern is a genuine stable equilibrium, not a slowly-decaying one.
+        // during a metamorphosis attempt (risk>1) the reach toward the target is stronger —
+        // which is also exactly what makes it dangerous: pushing harder toward an extreme,
+        // high-amplitude target both enables real convergence and drives V past COLLAPSE_V more.
+        const homeMul = 1 + (risk-1)*1.8;
+        const home = K_HOME_BASE * homeMul * (S[i]-V[i]);
+
+        // ---- conditioning: learned anticipatory response ----
+        const cond = flash[i]; // set externally when cue fires; decays below
+
+        const noiseMul = 1 + (risk-1)*7;
+        const noise = (Math.random()-0.5)*0.02*noiseMul;
+
+        let dv = dt*(flux*COUPLE_GAIN + react + home + cond) + noise;
+        Vn[i] = clamp(V[i]+dv, -1.6, 1.6);
+
+        // ---- differentiation state machine (hysteresis-locked) ----
+        // plasticity itself no longer feeds back into V; it only governs how strongly this
+        // cell resists the player's Rewrite tool (see Field.rewrite) — mature, long-settled
+        // tissue is harder to directly retarget than freshly wounded or undifferentiated tissue.
+        const desired = classify(Vn[i]);
+        if(desired !== type[i]){
+          timer[i]+=dt;
+          const lockDelay = 0.25 + plas[i]*0.35;
+          if(timer[i] > lockDelay){
+            type[i]=desired; timer[i]=0;
+            plas[i] = Math.min(1, plas[i]+0.15); // fresh switch = brief plasticity bump
+          }
+        } else {
+          timer[i]=0;
+          // only differentiated tissue commits (locks in); undifferentiated cells stay fully
+          // plastic so they remain free to follow the setpoint indefinitely
+          if(type[i]!==0) plas[i] = Math.max(0.15, plas[i]-dt*0.02);
+        }
+
+        // ---- coupling dynamics: gap junctions close under local stress, reopen when calm ----
+        if(mismatch > DECOUPLE_THRESH) coup[i] = Math.max(0, coup[i]-dt*DECOUPLE_RATE);
+        else coup[i] = Math.min(0.95, coup[i]+dt*RECOUPLE_RATE);
+
+        // ---- collapse risk: tissue pushed far past its normal operating range can die,
+        // more readily where gap junctions have already closed under local stress ----
+        const excess = Math.abs(Vn[i]) - COLLAPSE_V;
+        if(excess > 0){
+          const overload = Math.min(3, excess/0.25);
+          const isolationFactor = 1.6 - coup[i]; // higher when poorly coupled, never zero
+          // the further the whole tissue still has to travel toward its target, the more
+          // strain any single overloaded cell is under — ambitious, distant metamorphoses
+          // are genuinely more dangerous, not just cosmetically riskier
+          const reachStrain = 1 + distance*3;
+          if(Math.random() < dt*NECROSIS_RATE*risk*overload*isolationFactor*reachStrain) alive[i]=0;
+        }
+
+        // decay traces
+        elig[i]*=Math.exp(-dt/2.6);
+        flash[i]*=Math.exp(-dt*6);
+      }
+    }
+    // swap buffers
+    this.V.set(Vn);
+    this.t += dt;
+  },
+
+  // ---------------------------------------------------------- player levers
+  touchCue(cx,cy,r,strength){
+    this.forEachInRadius(cx,cy,r,(i,f)=>{
+      this.eligibility[i] = 1;
+      // anticipatory learned response fires alongside the raw stimulus
+      const ant = this.assoc[i];
+      this.cueFlash[i] += strength*f*3 - ant*2.2*f; // raw excite, minus learned brace (closes coupling via negative flash->home interplay)
+      if(ant>0.02) this.coupling[i] = Math.max(0, this.coupling[i]-ant*0.35*f);
+    });
+  },
+  sever(cx,cy,r){
+    this.forEachInRadius(cx,cy,r,(i,f)=>{
+      if(f<0.3) return;
+      this.assocStressor(i);
+      this.alive[i]=0;
+      this.V[i]=0;
+      this.coupling[i]*=0.15;
+      this.plasticity[i]=1;
+    });
+  },
+  assocStressor(i){
+    // classical conditioning update: strengthen assoc where a recent cue trace exists
+    this.assoc[i] = clamp(this.assoc[i] + 0.35*this.eligibility[i]*(1-this.assoc[i]), 0, 1);
+    this.assoc[i] = Math.max(0, this.assoc[i]-0.002); // slow forgetting baseline
+  },
+  weave(cx,cy,r,openUp){
+    this.forEachInRadius(cx,cy,r,(i,f)=>{
+      this.coupling[i] = clamp(this.coupling[i] + (openUp? f*0.6 : -f*0.6), 0, 0.95);
+    });
+  },
+  rewrite(cx,cy,r,value){
+    this.forEachInRadius(cx,cy,r,(i,f)=>{
+      // committed (low-plasticity) tissue resists having its target rewritten directly;
+      // wounding it first (sever resets plasticity to 1) makes it far more receptive
+      const resist = 0.25 + 0.75*this.plasticity[i];
+      const eff = f*0.5*resist;
+      this.S[i] = clamp(this.S[i]*(1-eff) + value*eff, -1.5, 1.5);
+    });
+  },
+  forEachInRadius(cx,cy,r,fn){
+    const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(W-1,Math.ceil(cx+r));
+    const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(H-1,Math.ceil(cy+r));
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+      const d = Math.hypot(x-cx,y-cy);
+      if(d<=r) fn(idx(x,y), 1-d/r);
+    }
+  },
+
+  // ---------------------------------------------------- diagnostic features
+  // error weighted by how much the setpoint actually asks of each cell — most of the grid is
+  // quiet background where every target agrees, so an unweighted average would barely move
+  // even when the tissue is nowhere near the target's actual shape
+  fieldError(){
+    let e=0, w=0;
+    for(let i=0;i<N;i++){
+      const weight = Math.abs(this.S[i]);
+      if(weight<0.05) continue;
+      e += weight*(this.alive[i] ? Math.abs(this.V[i]-this.S[i]) : 1.4);
+      w += weight;
+    }
+    return w? e/w : 0;
+  },
+  // error restricted to a local neighborhood — used to detect real, localized regeneration
+  // rather than a wound getting lost in the whole-grid average
+  localError(cx,cy,r){
+    let e=0, c=0;
+    this.forEachInRadius(cx,cy,r,(i)=>{
+      e += this.alive[i] ? Math.abs(this.V[i]-this.S[i]) : 1.4;
+      c++;
+    });
+    return c? e/c : 0;
+  }
+};
+
+// compute (roughness, complexity) descriptors — used for both live field & static archetype templates
+function computeFeatures(arr){
+  let rough=0, n=0;
+  for(let y=0;y<H;y++) for(let x=0;x<W-1;x++){ rough+=Math.abs(arr[idx(x+1,y)]-arr[idx(x,y)]); n++; }
+  for(let y=0;y<H-1;y++) for(let x=0;x<W;x++){ rough+=Math.abs(arr[idx(x,y+1)]-arr[idx(x,y)]); n++; }
+  rough = clamp((rough/n)/1.1, 0, 1);
+
+  // connected components where |value|>0.5 (blob / complexity count)
+  const seen = new Uint8Array(arr.length);
+  let blobs=0;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const i=idx(x,y);
+    if(seen[i] || Math.abs(arr[i])<=0.5) continue;
+    blobs++;
+    const stack=[i]; seen[i]=1;
+    while(stack.length){
+      const c=stack.pop();
+      const cx=c%W, cy=(c/W)|0;
+      const nb=[[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]];
+      for(const [nx,ny] of nb){
+        if(nx<0||nx>=W||ny<0||ny>=H) continue;
+        const ni=idx(nx,ny);
+        if(!seen[ni] && Math.abs(arr[ni])>0.5){ seen[ni]=1; stack.push(ni); }
+      }
+    }
+  }
+  const complexity = clamp(blobs/6, 0, 1);
+  return {rough, complexity};
+}
+
+// --------------------------------------------------------------- archetypes
+const Archetypes = { list: [], ember:null };
+(function buildArchetypes(){
+  const rnd = mulberry32(1337);
+  function gauss(cx,cy,sig,amp){
+    const arr=new Float32Array(N);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const u=x/(W-1), v=y/(H-1);
+      const d2=((u-cx)**2+(v-cy)**2)/(sig*sig);
+      arr[idx(x,y)] += amp*Math.exp(-d2);
+    }
+    return arr;
+  }
+  function add(arr, cx,cy,sig,amp){
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const u=x/(W-1), v=y/(H-1);
+      const d2=((u-cx)**2+(v-cy)**2)/(sig*sig);
+      arr[idx(x,y)] += amp*Math.exp(-d2);
+    }
+  }
+
+  const orb = gauss(0.5,0.32,0.20,1.0);
+
+  const twin = new Float32Array(N);
+  add(twin,0.3,0.28,0.15,0.95); add(twin,0.7,0.28,0.15,0.95);
+
+  // a branching mass, not just an inverted Orb — shape (not merely polarity) sets it apart
+  const root = new Float32Array(N);
+  add(root, 0.5, 0.66, 0.15, -1.0);
+  add(root, 0.34, 0.82, 0.12, -0.9);
+  add(root, 0.66, 0.82, 0.12, -0.9);
+  add(root, 0.5, 0.92, 0.09, -0.75);
+
+  const lattice = new Float32Array(N);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const u=x/(W-1), v=y/(H-1);
+    lattice[idx(x,y)] = 0.75*Math.sin(u*Math.PI*6)*Math.sin(v*Math.PI*4);
+  }
+
+  const fracture = new Float32Array(N);
+  for(let i=0;i<N;i++) fracture[i] = (rnd()*2-1)*1.1;
+
+  // three separate, intensely bright lobes (a "trident" of flame) — its three-way split keeps
+  // it out of every other archetype's neighborhood in the roughness/complexity embedding below
+  const ember = new Float32Array(N);
+  add(ember, 0.5, 0.30, 0.09, 1.4);
+  add(ember, 0.28, 0.50, 0.07, 1.25);
+  add(ember, 0.72, 0.50, 0.07, 1.25);
+
+  function make(id,name,template,depth,lethal){
+    const f = computeFeatures(template);
+    return {id,name,template,depth,lethal,pos:f,discovered:false};
+  }
+
+  Archetypes.list.push(make('orb','Orb',orb,0.22,false));
+  Archetypes.list.push(make('twin','Twin',twin,0.15,false));
+  Archetypes.list.push(make('root','Root',root,0.20,false));
+  Archetypes.list.push(make('lattice','Lattice',lattice,0.08,false));
+  Archetypes.list.push(make('fracture','Fracture',fracture,0.05,true));
+  Archetypes.ember = make('ember','Ember',ember,0.30,false);
+  Archetypes.ember.hidden = true;
+})();
+
+// ------------------------------------------------------------- progress/save
+const Progress = {
+  discoveries:{}, unlocks:{touch:true, sever:true, rewrite:false, weave:false, listen:false},
+  torchesKept:0, flamesAttempted:0, flamesSurvived:0, archetypesVisited:{}, emberRevealed:false,
+  load(){
+    try{
+      const raw = localStorage.getItem('flamefield_save');
+      if(raw) Object.assign(this, JSON.parse(raw));
+    }catch(e){}
+  },
+  save(){
+    try{ localStorage.setItem('flamefield_save', JSON.stringify(this)); }catch(e){}
+  }
+};
+Progress.load();
+
+const CODEX_TEXT = {
+  coherence: "It settles toward a shape before you have touched anything. That is not nothing.",
+  regeneration: "You tore it open. It closed — not by replay, but by reaching, again, for whatever it was reaching for before.",
+  association: "It began flinching at the warning, not the wound. Something in it now expects.",
+  setpoint: "The same tissue, asked for a different shape, became a different shape. The plan was never the substance.",
+  morphospace: "There are places this thing can be. Some hold it. Some do not.",
+  ember: "Far off, past the shapes you know, something pulls harder than the rest — and comes apart easier.",
+  torch: "You kept what you had. It is still exactly what it was.",
+  flame: "You let it go. Whatever comes back will not be what you sent."
+};
+const CODEX_ORDER = ['coherence','regeneration','association','setpoint','morphospace','ember','torch','flame'];
+
+function unlockCodex(key){
+  if(Progress.discoveries[key]) return;
+  Progress.discoveries[key]=true;
+  Progress.save();
+  renderCodex();
+  flashReadout('· '+key+' ·');
+}
+
+// ------------------------------------------------------------------ renderer
+const simCanvas = document.getElementById('sim');
+const glowCanvas = document.getElementById('glow');
+const ctx = simCanvas.getContext('2d');
+const glowCtx = glowCanvas.getContext('2d');
+const off = document.createElement('canvas'); off.width=W; off.height=H;
+const octx = off.getContext('2d');
+const imgData = octx.createImageData(W,H);
+
+let listenMode = false;
+
+function typeColor(t, v, alive, coupling){
+  if(!alive) return [10,6,8];
+  // base hue by canonical type, modulated by live V for a breathing feel
+  const bright = clamp(0.5+v*0.5,0,1);
+  switch(t){
+    case 0: return [ 26+40*bright, 46+50*bright, 54+50*bright ];      // undiff: cool slate
+    case 1: return [ 150+80*bright, 110+50*bright, 40 ];              // low pos: amber
+    case 2: return [ 255, 205+40*bright, 120+60*bright ];             // hi pos: gold/white — organizer-like
+    case 3: return [ 30, 90+40*bright, 120+60*bright ];               // low neg: teal
+    case 4: return [ 70+40*bright, 30, 130+70*bright ];                // hi neg: violet
+  }
+  return [0,0,0];
+}
+
+function draw(){
+  const data = imgData.data;
+  for(let i=0;i<N;i++){
+    let [r,g,b] = typeColor(Field.type[i], Field.V[i], Field.alive[i], Field.coupling[i]);
+    if(listenMode){
+      // gradient/coupling overlay: dim tissue, highlight coupling strength as cyan wash
+      const c = Field.coupling[i];
+      r = r*0.3; g = g*0.3 + c*120; b = b*0.3 + c*140;
+    }
+    const o=i*4;
+    data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
+  }
+  octx.putImageData(imgData,0,0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.clearRect(0,0,simCanvas.width,simCanvas.height);
+  ctx.drawImage(off,0,0,simCanvas.width,simCanvas.height);
+  // glow layer: cheap canvas-to-canvas copy (blur applied via CSS filter on #glow), not a
+  // per-frame toDataURL() re-encode, which would be far too slow to run at 60fps
+  glowCtx.imageSmoothingEnabled = true;
+  glowCtx.clearRect(0,0,glowCanvas.width,glowCanvas.height);
+  glowCtx.drawImage(off,0,0,glowCanvas.width,glowCanvas.height);
+}
+
+function resize(){
+  const maxW = Math.min(window.innerWidth*0.94, 520);
+  const maxH = window.innerHeight*0.86;
+  let cw = maxW, ch = cw*(H/W);
+  if(ch>maxH){ ch=maxH; cw=ch*(W/H); }
+  simCanvas.style.width = cw+'px'; simCanvas.style.height = ch+'px';
+  simCanvas.width = Math.round(cw); simCanvas.height = Math.round(ch);
+  glowCanvas.style.width = cw+'px'; glowCanvas.style.height = ch+'px';
+  glowCanvas.width = Math.round(cw); glowCanvas.height = Math.round(ch);
+  glowCanvas.style.position='absolute'; glowCanvas.style.left='0'; glowCanvas.style.top='0';
+}
+window.addEventListener('resize', resize);
+
+// -------------------------------------------------------------- tool system
+const TOOLS = [
+  {id:'touch', glyph:'○', name:'touch', cooldown:0, max:0, energy:1},
+  {id:'sever', glyph:'✕', name:'sever', cooldown:0, max:3, energy:3, regen:12},
+  {id:'rewrite', glyph:'◈', name:'rewrite', cooldown:0, max:1, energy:1, regen:0.05, continuous:true},
+  {id:'weave', glyph:'≈', name:'weave', cooldown:0, max:1, energy:1, regen:0.15, continuous:true},
+];
+let activeTool = 'touch';
+
+const toolbar = document.getElementById('toolbar');
+function buildToolbar(){
+  toolbar.innerHTML='';
+  TOOLS.forEach(t=>{
+    const btn = document.createElement('div');
+    btn.className='tool'+(Progress.unlocks[t.id]?' unlocked':'')+(t.id===activeTool?' active':'');
+    btn.dataset.id=t.id;
+    btn.innerHTML = `<div class="ring"></div><div class="fill" style="clip-path:inset(0 0 0 0)"></div><span>${t.glyph}</span>` + (Progress.unlocks[t.id]?'':'<div class="lock">·</div>');
+    btn.addEventListener('pointerdown', (e)=>{
+      e.stopPropagation();
+      if(!Progress.unlocks[t.id]) return;
+      activeTool = t.id;
+      buildToolbar();
+    });
+    toolbar.appendChild(btn);
+  });
+}
+buildToolbar();
+
+const listenBtn = document.getElementById('listenBtn');
+listenBtn.addEventListener('click', ()=>{
+  if(!Progress.unlocks.listen) return;
+  listenMode = !listenMode;
+  listenBtn.classList.toggle('active', listenMode);
+  if(listenMode) openMorph(); else closeMorph();
+});
+
+function flashReadout(text){
+  const r = document.getElementById('readout');
+  r.textContent = text;
+  r.style.opacity = 1;
+  clearTimeout(flashReadout._t);
+  flashReadout._t = setTimeout(()=>{ r.style.opacity=0; }, 2600);
+}
+
+// ------------------------------------------------------------- input handling
+let pointerActive=false, lastX=0, lastY=0, pressTimer=null, longPressed=false;
+
+function toGrid(clientX, clientY){
+  const rect = simCanvas.getBoundingClientRect();
+  const gx = (clientX-rect.left)/rect.width * W;
+  const gy = (clientY-rect.top)/rect.height * H;
+  return [clamp(gx,0,W-1), clamp(gy,0,H-1)];
+}
+
+const toolState = {};
+TOOLS.forEach(t=>{ toolState[t.id] = {energy: t.max||1}; });
+
+function applyTool(id, gx, gy, isLongPress){
+  const t = TOOLS.find(t=>t.id===id);
+  const st = toolState[id];
+  if(id==='touch'){
+    Field.touchCue(gx,gy,3.2,0.35);
+    const i = idx(Math.round(gx),Math.round(gy));
+    flashReadout('V '+Field.V[i].toFixed(2)+'  ·  assoc '+Field.assoc[i].toFixed(2));
+    return;
+  }
+  if(id==='sever'){
+    if(st.energy<1) { flashReadout('· spent ·'); return; }
+    st.energy -= 1;
+    const r = 2.8;
+    const preErr = Field.localError(gx,gy,r);
+    Field.sever(gx,gy,r);
+    watchRegeneration(preErr, gx, gy, r);
+    return;
+  }
+  if(id==='rewrite'){
+    if(st.energy<=0.05){ flashReadout('· spent ·'); return; }
+    st.energy = Math.max(0, st.energy-0.01);
+    Field.rewrite(gx,gy,3.4, isLongPress? -1.1 : 1.1);
+    pendingSetpointCheck = {t:Field.t};
+    return;
+  }
+  if(id==='weave'){
+    if(st.energy<=0.05){ flashReadout('· spent ·'); return; }
+    st.energy = Math.max(0, st.energy-0.01);
+    Field.weave(gx,gy,3.0, !isLongPress);
+    return;
+  }
+}
+
+let regenWatch=null;
+function watchRegeneration(preErr, gx, gy, r){
+  regenWatch = {t0:Field.t, preErr, gx, gy, r};
+}
+
+let pendingSetpointCheck=null;
+
+simCanvas.addEventListener('pointerdown', (e)=>{
+  pointerActive=true; longPressed=false;
+  const [gx,gy] = toGrid(e.clientX,e.clientY);
+  lastX=gx; lastY=gy;
+  pressTimer = setTimeout(()=>{ longPressed=true; applyTool(activeTool,gx,gy,true); }, 420);
+  if(activeTool==='touch') applyTool('touch',gx,gy,false);
+});
+simCanvas.addEventListener('pointermove', (e)=>{
+  if(!pointerActive) return;
+  const [gx,gy] = toGrid(e.clientX,e.clientY);
+  lastX=gx; lastY=gy;
+  const t = TOOLS.find(t=>t.id===activeTool);
+  if(t && t.continuous) applyTool(activeTool,gx,gy,longPressed);
+  else if(activeTool==='touch') Field.touchCue(gx,gy,3.2,0.12);
+});
+window.addEventListener('pointerup', ()=>{
+  if(pointerActive && !longPressed && activeTool!=='touch'){
+    applyTool(activeTool,lastX,lastY,false);
+  }
+  pointerActive=false;
+  clearTimeout(pressTimer);
+});
+
+// ------------------------------------------------------------ morphospace UI
+const morphEl = document.getElementById('morph');
+const morphCanvas = document.getElementById('morphCanvas');
+const mctx = morphCanvas.getContext('2d');
+let morphSize=300;
+let pendingChoice=null;
+
+function sizeMorph(){
+  morphSize = Math.min(window.innerWidth*0.85, window.innerHeight*0.55, 380);
+  morphCanvas.width = morphSize; morphCanvas.height = morphSize;
+}
+window.addEventListener('resize', sizeMorph);
+sizeMorph();
+
+function openMorph(){ morphEl.classList.add('open'); }
+function closeMorph(){ morphEl.classList.remove('open'); }
+document.getElementById('morphClose').addEventListener('click', ()=>{
+  listenMode=false; listenBtn.classList.remove('active'); closeMorph();
+});
+
+function drawMorph(){
+  if(!morphEl.classList.contains('open')) return;
+  mctx.clearRect(0,0,morphSize,morphSize);
+  mctx.fillStyle='#020304'; mctx.fillRect(0,0,morphSize,morphSize);
+  const pad=30;
+  const toPx = (f)=>[pad+f.rough*(morphSize-2*pad), pad+(1-f.complexity)*(morphSize-2*pad)];
+
+  const visible = Archetypes.list; // positions always drawn once the morphospace overlay exists
+  const showEmber = Progress.emberRevealed;
+
+  const all = showEmber? visible.concat([Archetypes.ember]) : visible;
+
+  all.forEach(a=>{
+    const [px,py] = toPx(a.pos);
+    const rr = a.depth*(morphSize-2*pad);
+    mctx.beginPath();
+    mctx.arc(px,py,rr,0,Math.PI*2);
+    mctx.strokeStyle = a.lethal? 'rgba(255,70,70,0.35)' : (a===Archetypes.ember?'rgba(255,190,110,0.5)':'rgba(120,220,210,0.25)');
+    mctx.lineWidth=1;
+    mctx.stroke();
+
+    mctx.beginPath();
+    mctx.arc(px,py,5,0,Math.PI*2);
+    mctx.fillStyle = a.lethal? '#ff5a5a' : (a===Archetypes.ember? '#ffcf8a' : '#8fe9df');
+    mctx.fill();
+
+    const known = Progress.archetypesVisited[a.id] || a===Archetypes.ember;
+    mctx.fillStyle = '#7fd';
+    mctx.font='10px monospace';
+    mctx.fillText(known? a.name : '?', px+8, py+4);
+  });
+
+  // live marker
+  const f = computeFeatures(Field.V);
+  const [px,py] = toPx(f);
+  mctx.beginPath();
+  mctx.arc(px,py,4,0,Math.PI*2);
+  mctx.fillStyle='#fff';
+  mctx.fill();
+  mctx.beginPath();
+  mctx.arc(px,py,8,0,Math.PI*2);
+  mctx.strokeStyle='rgba(255,255,255,0.5)';
+  mctx.stroke();
+
+  // track visited archetypes (within its ring)
+  all.forEach(a=>{
+    const d = Math.hypot(f.rough-a.pos.rough, f.complexity-a.pos.complexity);
+    if(d < a.depth){
+      if(!Progress.archetypesVisited[a.id]){
+        Progress.archetypesVisited[a.id]=true; Progress.save();
+        if(a===Archetypes.ember) unlockCodex('ember');
+      }
+      if(a===Archetypes.ember){
+        // being near the flame while it is not your chosen target is just proximity — no forced effect
+      }
+    }
+  });
+
+  document.getElementById('morphHint').textContent =
+    showEmber ? 'tap a mark to set it as target' : 'tap a mark to set it as target · something further waits';
+}
+
+morphCanvas.addEventListener('pointerdown',(e)=>{
+  const rect = morphCanvas.getBoundingClientRect();
+  const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+  const pad=30;
+  const all = Archetypes.list.concat(Progress.emberRevealed? [Archetypes.ember]:[]);
+  let best=null, bestD=14;
+  for(const a of all){
+    const px = pad+a.pos.rough*(morphSize-2*pad);
+    const py = pad+(1-a.pos.complexity)*(morphSize-2*pad);
+    const d = Math.hypot(mx-px,my-py);
+    if(d < bestD){ bestD=d; best=a; }
+  }
+  if(best) selectArchetype(best);
+});
+
+function selectArchetype(a){
+  if(a===Archetypes.ember){
+    openChoice();
+    return;
+  }
+  Field.S.set(a.template);
+  flashReadout('· target set: '+(Progress.archetypesVisited[a.id]?a.name:'unnamed shape')+' ·');
+}
+
+// ------------------------------------------------------------- flame/torch
+const choiceEl = document.getElementById('choice');
+function openChoice(){
+  document.getElementById('choicePrompt').textContent =
+    'the far shape pulls. reaching it may unmake what you have.';
+  choiceEl.classList.add('open');
+}
+document.getElementById('keepTorch').addEventListener('click', ()=>{
+  choiceEl.classList.remove('open');
+  Progress.torchesKept++; Progress.save();
+  unlockCodex('torch');
+});
+document.getElementById('takeFlame').addEventListener('click', ()=>{
+  choiceEl.classList.remove('open');
+  Progress.flamesAttempted++; Progress.save();
+  unlockCodex('flame');
+  Field.S.set(Archetypes.ember.template);
+  flameRisk = 1.4;
+  flameActive = true;
+  flameHoldTime = 0;
+});
+
+let flameActive=false, flameRisk=1.0, flameHoldTime=0;
+
+// -------------------------------------------------------------- main loop
+let lastTime=performance.now();
+
+function tick(now){
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.05,(now-lastTime)/1000); lastTime=now;
+
+  // tool energy regen
+  TOOLS.forEach(t=>{
+    if(!t.max) return;
+    const st=toolState[t.id];
+    if(t.regen) st.energy = Math.min(t.max, st.energy + dt*(t.max/ (t.max===1?8:12)) * (t.regen<1? t.regen*20: 1));
+  });
+
+  const risk = flameActive? flameRisk : 1.0;
+  const distance = flameActive? Field.fieldError() : 0; // how far from the target right now
+  for(let s=0;s<SUBSTEPS;s++) Field.step(DT, risk, distance);
+  draw();
+
+  // -------- discovery checks (auto, first-time) --------
+  const err = Field.fieldError();
+
+  if(!Progress.discoveries.coherence && Field.t>3 && err<0.35){
+    unlockCodex('coherence');
+  }
+
+  if(regenWatch){
+    const dtR = Field.t - regenWatch.t0;
+    const localErr = Field.localError(regenWatch.gx, regenWatch.gy, regenWatch.r);
+    if(dtR>1.5 && localErr < Math.max(regenWatch.preErr*1.3, 0.12)){
+      if(!Progress.discoveries.regeneration){
+        unlockCodex('regeneration');
+        Progress.unlocks.rewrite = true; Progress.save(); buildToolbar();
+      }
+      regenWatch=null;
+    } else if(dtR>18){
+      regenWatch=null; // gave it a fair chance
+    }
+  }
+
+  if(pendingSetpointCheck){
+    const dtS = Field.t - pendingSetpointCheck.t;
+    if(dtS>4){
+      const after = err;
+      if(after < 0.45 && !Progress.discoveries.setpoint){
+        unlockCodex('setpoint');
+        Progress.unlocks.listen = true; Progress.save(); buildToolbar();
+      }
+      pendingSetpointCheck=null;
+    }
+  }
+
+  // conditioning proof: fires inside touchCue's math; detect via assoc levels directly
+  if(!Progress.discoveries.association){
+    let maxAssoc=0;
+    for(let i=0;i<N;i+=7) if(Field.assoc[i]>maxAssoc) maxAssoc=Field.assoc[i];
+    if(maxAssoc>0.45){
+      unlockCodex('association');
+      Progress.unlocks.weave = true; Progress.save(); buildToolbar();
+    }
+  }
+
+  if(Progress.unlocks.listen && !Progress.discoveries.morphospace){
+    const visitedCount = Object.keys(Progress.archetypesVisited).length;
+    if(visitedCount>=2) unlockCodex('morphospace');
+  }
+
+  if(Progress.discoveries.morphospace && Progress.discoveries.association && !Progress.emberRevealed){
+    Progress.emberRevealed = true; Progress.save();
+    unlockCodex('ember');
+  }
+
+  if(flameActive){
+    // require the convergence to actually hold for a stretch of sim-time, not just touch the
+    // threshold for one noisy instant — a real metamorphosis settles, it doesn't just blip past
+    if(err < 0.2) flameHoldTime += DT*SUBSTEPS; else flameHoldTime = 0;
+    if(flameHoldTime > 2.2){
+      flameActive=false; Progress.flamesSurvived++; Progress.save();
+      flashReadout('· it held ·');
+    } else {
+      // check for collapse: too much dead tissue = failure, quiet reseed
+      let dead=0; for(let i=0;i<N;i++) if(!Field.alive[i]) dead++;
+      if(dead > N*0.55){
+        flameActive=false;
+        flashReadout('· lost ·');
+        setTimeout(reseed, 900);
+      }
+    }
+  }
+
+  drawMorph();
+  toolbar_energy_ui();
+}
+
+function toolbar_energy_ui(){
+  document.querySelectorAll('.tool').forEach(el=>{
+    const id = el.dataset.id;
+    const t = TOOLS.find(t=>t.id===id);
+    const st = toolState[id];
+    const fill = el.querySelector('.fill');
+    if(t.max && fill){
+      const pct = 1-(st.energy/t.max);
+      fill.style.clipPath = `inset(${pct*100}% 0 0 0)`;
+    }
+  });
+}
+
+function reseed(){
+  const veil=document.getElementById('veil');
+  veil.style.opacity=1;
+  setTimeout(()=>{
+    Field.init();
+    veil.style.opacity=0;
+  }, 700);
+}
+
+// ------------------------------------------------------------------- codex
+function renderCodex(){
+  const wrap = document.getElementById('entries');
+  wrap.innerHTML='';
+  CODEX_ORDER.forEach(key=>{
+    const known = Progress.discoveries[key];
+    const div = document.createElement('div');
+    div.className = 'entry'+(known?'':' locked');
+    div.innerHTML = `<div class="name">${known?key:'· · ·'}</div><div class="desc">${CODEX_TEXT[key]||''}</div>`;
+    wrap.appendChild(div);
+  });
+  document.getElementById('stats').textContent =
+    `torches kept: ${Progress.torchesKept}   flames attempted: ${Progress.flamesAttempted}   flames survived: ${Progress.flamesSurvived}`;
+}
+
+document.getElementById('codexBtn').addEventListener('click', ()=>{
+  renderCodex();
+  document.getElementById('codex').classList.add('open');
+});
+document.getElementById('closeCodex').addEventListener('click', ()=>{
+  document.getElementById('codex').classList.remove('open');
+});
+
+// --------------------------------------------------------------------- boot
+Field.init();
+resize();
+// carry forward any unlocks from a previous session
+buildToolbar();
+setTimeout(()=>{
+  const b=document.getElementById('boot');
+  b.style.opacity=0;
+  setTimeout(()=>b.remove(),1000);
+}, 700);
+
+requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>
