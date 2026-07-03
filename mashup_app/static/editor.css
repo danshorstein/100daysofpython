@@ -99,8 +99,20 @@ input[type="range"] { accent-color: var(--accent); }
 .loadbtn {
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px;
   padding: 0.22rem 0.6rem; font-size: 0.78rem; cursor: pointer;
+  position: relative;
 }
-.loadbtn input { display: none; }
+/* Visually hidden (not display:none) — Safari/iOS won't forward a label
+   click to a file input hidden with display:none, so it silently fails
+   to open the picker. This keeps it clickable while invisible. */
+.loadbtn input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .tname { font-size: 0.74rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbpm { font-size: 0.7rem; color: var(--muted); min-height: 0.9rem; }
 .track-head .row2 { display: flex; align-items: center; gap: 0.4rem; margin-top: auto; }
