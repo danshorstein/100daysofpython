@@ -10,8 +10,9 @@ import tempfile
 import numpy as np
 import soundfile as sf
 
-from mashup import TrackSpec, VolumeSegment, build_mashup, detect_bpm
+from mashup import ClipSpec, EnvelopePoint, TrackSpec, VolumeSegment, build_mashup, detect_bpm, render_mix
 from mashup.audio import (
+    apply_gain_envelope,
     apply_volume_segments,
     float_to_segment,
     segment_to_float,
@@ -92,6 +93,46 @@ def test_build_mashup_end_to_end():
         assert 110 <= res.bpm_a <= 130
         assert res.applied_bpm == res.bpm_a
         assert res.duration_ms > 0
+
+
+def test_gain_envelope_interpolates():
+    seg = float_to_segment(_drum_track(120, dur=4.0), SR)
+    # fade the middle down to -30 dB and back up
+    shaped = apply_gain_envelope(seg, [
+        EnvelopePoint(0, 0),
+        EnvelopePoint(2000, -30),
+        EnvelopePoint(4000, 0),
+    ])
+    assert len(shaped) == len(seg)
+    # middle should be much quieter than original; edges roughly untouched
+    assert shaped[1800:2200].dBFS < seg[1800:2200].dBFS - 15
+    assert abs(shaped[:500].dBFS - seg[:500].dBFS) < 3
+
+
+def test_render_mix_end_to_end():
+    with tempfile.TemporaryDirectory() as d:
+        a, b = os.path.join(d, "a.wav"), os.path.join(d, "b.wav")
+        _write(a, 120, base_hz=180, seed=1)
+        _write(b, 90, base_hz=120, seed=2)
+        out = os.path.join(d, "mix.wav")
+        duration = render_mix(
+            [
+                ClipSpec(path=a, trim_start_ms=500, trim_end_ms=4500,
+                         gain_db=-2, offset_ms=0,
+                         envelope=[EnvelopePoint(0, 0), EnvelopePoint(2000, -20)]),
+                ClipSpec(path=b, stretch_rate=90 / 120, offset_ms=1000, gain_db=-3),
+            ],
+            out,
+            master_gain_db=2.0,
+            normalize=True,
+            output_format="wav",
+        )
+        assert os.path.exists(out) and os.path.getsize(out) > 0
+        # clip B: 8s source stretched by rate 0.75 -> ~10.67s, +1s offset
+        assert 11000 < duration < 12500, f"unexpected duration {duration}"
+        # normalize guarantee: no clipping
+        from pydub import AudioSegment as AS
+        assert AS.from_file(out).max_dBFS <= 0.0
 
 
 if __name__ == "__main__":

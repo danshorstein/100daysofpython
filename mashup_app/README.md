@@ -1,41 +1,47 @@
-# 🎚️ Mashup Maker
+# 🎚️ Mashup Studio
 
-A small Flask web app that blends **two songs** into a mashup. Upload two audio
-files, trim them, balance the volume (including per-section automation), and
-**sync their tempos** so the beats line up.
+A DAW-style web app that blends **two songs** into a mashup — waveforms you
+drag, trim and automate directly, with **instant in-browser preview** so you
+can fiddle until it sounds right, then render a final file server-side.
 
-This covers:
+## The editor (at `/`)
 
-- **Phase 1** — upload, trim, overall + part-based volume control, fades, and
-  overlaying the two tracks at chosen positions.
-- **Phase 2** — automatic BPM detection and pitch-preserving time-stretching so
-  the two songs can be tempo-matched before they're layered.
-
-## Features
-
-| Capability | How |
+| Control | How |
 | --- | --- |
-| Select / upload two tracks | MP3, WAV, OGG, FLAC, M4A, AAC |
-| Trim each track | start / end (seconds) |
-| Volume per track | overall gain in dB |
-| Volume *throughout* the song | automation lines: `start-end: gain_dB` |
-| Fades | fade in / fade out (seconds) |
-| Placement | offset each track in the final mix |
-| Tempo sync | detect BPM of both, time-stretch to match |
-| Output | MP3 / WAV / OGG, playable in-browser + download |
+| Load two tracks | MP3, WAV, OGG, FLAC, M4A, AAC — BPM auto-detected |
+| Slide a clip in time | drag the clip body left/right |
+| Cut to just the part you want | drag the clip's left/right edges |
+| Volume over time (automation) | double-click a clip to drop a point, drag points up/down, double-click a point to delete |
+| Per-track volume | fader on each lane, plus mute |
+| **Master volume** | master fader over the whole mix (render normalizes so it can't clip) |
+| Auto level-match | "Match loudness" sets track B's fader to match A |
+| Tempo sync | Off / match A / match B — beats time-align |
+| **Instant preview** | Play any time; every edit is audible immediately (Web Audio) |
+| Final render | MP3 / WAV / OGG with studio-quality pitch-preserving stretch |
+
+One honest caveat: with tempo sync on, the *preview* shifts pitch slightly
+(browsers can only rate-change in real time); the **final render** stretches
+without changing pitch (Rubber Band when installed, librosa otherwise).
+
+The original simple form UI is still available at `/classic`.
 
 ## Project layout
 
 ```
 mashup_app/
-├── app.py              # Flask routes (web plumbing only)
+├── app.py                 # Flask routes + JSON API (web plumbing only)
 ├── mashup/
 │   ├── __init__.py
-│   └── audio.py        # all audio processing (testable without Flask)
-├── templates/          # base / index / result pages
-├── static/style.css
-├── run-mac.sh          # one-command setup + start on macOS
-├── test_audio.py       # synthetic-audio test suite (no real files needed)
+│   └── audio.py           # all audio processing (testable without Flask)
+├── templates/
+│   ├── editor.html        # the DAW-style editor (served at /)
+│   └── base/index/result  # classic form UI (served at /classic)
+├── static/
+│   ├── editor.js          # timeline, drag/trim/envelopes, Web Audio preview
+│   ├── editor.css
+│   └── style.css
+├── run-mac.sh             # one-command setup + start on macOS
+├── test_audio.py          # synthetic-audio test suite (no real files needed)
 └── requirements.txt
 ```
 

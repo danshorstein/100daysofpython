@@ -277,6 +277,125 @@ def _match_format(a: AudioSegment, b: AudioSegment) -> tuple[AudioSegment, Audio
 
 
 # ---------------------------------------------------------------------------
+# Phase 3: DAW-style clips (envelope automation, master bus, N-track mix)
+# ---------------------------------------------------------------------------
+@dataclass
+class EnvelopePoint:
+    """A volume-automation breakpoint: ``gain_db`` at ``t_ms`` into the clip.
+
+    Times are relative to the *rendered* clip (i.e. after trimming and any
+    time-stretch), matching what the editor UI shows on screen.
+    """
+
+    t_ms: float
+    gain_db: float
+
+
+@dataclass
+class ClipSpec:
+    """One clip on the editor timeline.
+
+    Processing order (must stay in sync with the browser preview):
+    trim (source time) -> time-stretch -> gain -> envelope -> fades,
+    then the clip is placed at ``offset_ms`` on the output timeline.
+    """
+
+    path: str
+    trim_start_ms: int = 0
+    trim_end_ms: Optional[int] = None
+    stretch_rate: float = 1.0            # >1 = faster/shorter
+    gain_db: float = 0.0
+    offset_ms: int = 0
+    fade_in_ms: int = 0
+    fade_out_ms: int = 0
+    envelope: List[EnvelopePoint] = field(default_factory=list)
+
+
+def apply_gain_envelope(seg: AudioSegment, points: List[EnvelopePoint]) -> AudioSegment:
+    """Apply smoothly interpolated volume automation.
+
+    Unlike :func:`apply_volume_segments` (stepped regions), this linearly
+    interpolates gain in dB between breakpoints — the DAW-style envelope.
+    Before the first / after the last point the gain holds constant.
+    """
+    if not points:
+        return seg
+
+    y, sr = segment_to_float(seg)
+    n = y.shape[-1]
+    t_ms = np.arange(n, dtype=np.float64) / sr * 1000.0
+
+    ordered = sorted(points, key=lambda p: p.t_ms)
+    times = np.array([p.t_ms for p in ordered])
+    dbs = np.array([p.gain_db for p in ordered])
+    gain = np.power(10.0, np.interp(t_ms, times, dbs) / 20.0).astype(np.float32)
+
+    y = y * gain          # broadcasting covers both (n,) and (channels, n)
+    return float_to_segment(np.clip(y, -1.0, 1.0), sr, sample_width=seg.sample_width)
+
+
+def render_clip(spec: ClipSpec) -> AudioSegment:
+    """Render a single timeline clip (everything except placement)."""
+    seg = AudioSegment.from_file(spec.path)
+
+    end = spec.trim_end_ms if spec.trim_end_ms is not None else len(seg)
+    seg = seg[spec.trim_start_ms:end]
+
+    if abs(spec.stretch_rate - 1.0) > 1e-3:
+        seg = time_stretch(seg, spec.stretch_rate)
+
+    if spec.gain_db:
+        seg = seg.apply_gain(spec.gain_db)
+
+    seg = apply_gain_envelope(seg, spec.envelope)
+
+    if spec.fade_in_ms:
+        seg = seg.fade_in(min(int(spec.fade_in_ms), len(seg)))
+    if spec.fade_out_ms:
+        seg = seg.fade_out(min(int(spec.fade_out_ms), len(seg)))
+
+    return seg
+
+
+def render_mix(
+    clips: List[ClipSpec],
+    output_path: str,
+    *,
+    master_gain_db: float = 0.0,
+    normalize: bool = True,
+    output_format: Optional[str] = None,
+) -> int:
+    """Mix rendered clips onto one timeline and export.  Returns duration (ms).
+
+    ``normalize=True`` pulls the final mix down to -1 dBFS peak if it would
+    clip, so a hot master fader can't distort the export.
+    """
+    if not clips:
+        raise ValueError("render_mix needs at least one clip")
+
+    rendered = [render_clip(c) for c in clips]
+
+    frame_rate = max(s.frame_rate for s in rendered)
+    channels = max(s.channels for s in rendered)
+    rendered = [s.set_frame_rate(frame_rate).set_channels(channels) for s in rendered]
+
+    total = max(c.offset_ms + len(s) for c, s in zip(clips, rendered))
+    canvas = AudioSegment.silent(duration=total, frame_rate=frame_rate)
+    canvas = canvas.set_channels(channels)
+    for c, s in zip(clips, rendered):
+        canvas = canvas.overlay(s, position=c.offset_ms)
+
+    if master_gain_db:
+        canvas = canvas.apply_gain(master_gain_db)
+    if normalize and canvas.max_dBFS > -1.0:
+        canvas = canvas.apply_gain(-1.0 - canvas.max_dBFS)
+
+    fmt = output_format or os.path.splitext(output_path)[1].lstrip(".") or "mp3"
+    canvas.export(output_path, format=fmt)
+    return len(canvas)
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point
 # ---------------------------------------------------------------------------
 @dataclass

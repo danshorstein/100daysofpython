@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mashup Studio</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎚️</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='editor.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎚️ Mashup Studio</h1>
+    <a class="classic-link" href="{{ url_for('index') }}">classic form →</a>
+  </header>
+
+  <details class="help">
+    <summary>How to use this (30-second read)</summary>
+    <div class="help-body">
+      <ol>
+        <li><strong>Load two songs.</strong> Each appears as a waveform clip on its own lane. BPM is detected automatically.</li>
+        <li><strong>Drag the clip body</strong> left/right to slide it in time. <strong>Drag its left/right edges</strong> to cut it down to just the part you want.</li>
+        <li><strong>Double-click (or double-tap) inside a clip</strong> to drop a volume point. Drag points up/down to shape the volume over time — duck one song under the other, swell a chorus in, etc. Double-click a point to remove it.</li>
+        <li><strong>Faders:</strong> each lane has its own volume fader; the <strong>Master</strong> fader controls the whole mix. <strong>Match loudness</strong> auto-levels track B to track A as a starting point.</li>
+        <li><strong>Press Play anytime.</strong> Preview is instant and reflects every edit — this is where the fucking around happens. Click the ruler to move the playhead.</li>
+        <li><strong>Tempo sync</strong> time-aligns the beats. Note: the <em>preview</em> nudges pitch slightly (browser limitation); the final render stretches without changing pitch.</li>
+        <li>Happy? <strong>Render mix</strong> produces the real file (studio-quality stretch) to play and download.</li>
+      </ol>
+      <p class="recipe"><strong>A classic recipe to start with:</strong> vocals-heavy song on lane A, instrumental-heavy song on lane B → trim B to its intro/instrumental section → turn on tempo sync → drop volume points on A so it ducks wherever B's vocals would clash → nudge A left/right until the downbeats lock.</p>
+    </div>
+  </details>
+
+  <section class="toolbar">
+    <div class="group">
+      <button id="play" class="transport" disabled>▶ Play</button>
+      <button id="stop" class="transport" disabled>■ Stop</button>
+      <span id="clock" class="clock">0:00.0</span>
+    </div>
+    <div class="group">
+      <label>Tempo sync
+        <select id="sync">
+          <option value="off">Off</option>
+          <option value="a">Match A's BPM</option>
+          <option value="b">Match B's BPM</option>
+        </select>
+      </label>
+      <button id="match-loudness" disabled>Match loudness</button>
+    </div>
+    <div class="group master-group">
+      <label class="fader-label">Master
+        <input type="range" id="master" min="-24" max="12" step="0.5" value="0">
+        <span id="master-db" class="db">0.0 dB</span>
+      </label>
+    </div>
+    <div class="group">
+      <button id="zoom-out">−</button>
+      <button id="zoom-fit">fit</button>
+      <button id="zoom-in">+</button>
+    </div>
+    <div class="group">
+      <select id="format">
+        <option value="mp3">MP3</option>
+        <option value="wav">WAV</option>
+        <option value="ogg">OGG</option>
+      </select>
+      <button id="render" class="render" disabled>⬇ Render mix</button>
+    </div>
+  </section>
+
+  <section class="studio">
+    <div class="headers">
+      <div class="ruler-spacer"></div>
+      {% for i, label in [(0, "A"), (1, "B")] %}
+      <div class="track-head" id="head{{ i }}">
+        <div class="row1">
+          <span class="badge">{{ label }}</span>
+          <label class="loadbtn">Load…<input type="file" accept="audio/*" data-track="{{ i }}" class="file-input"></label>
+        </div>
+        <div class="tname" id="tname{{ i }}">no track</div>
+        <div class="tbpm" id="tbpm{{ i }}"></div>
+        <div class="row2">
+          <button class="mute" data-track="{{ i }}" id="mute{{ i }}">M</button>
+          <input type="range" class="tgain" data-track="{{ i }}" id="tgain{{ i }}"
+                 min="-24" max="12" step="0.5" value="0">
+          <span class="db" id="tdb{{ i }}">0.0</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="timeline-wrap" id="timeline-wrap">
+      <div class="timeline" id="timeline">
+        <canvas id="ruler" class="ruler"></canvas>
+        <div class="lane"><canvas id="wave0"></canvas></div>
+        <div class="lane"><canvas id="wave1"></canvas></div>
+        <div id="playhead"></div>
+      </div>
+    </div>
+  </section>
+
+  <p class="legend">
+    drag clip = slide &nbsp;•&nbsp; drag edges = trim &nbsp;•&nbsp; double-click clip = add volume point
+    &nbsp;•&nbsp; drag point = shape volume &nbsp;•&nbsp; double-click point = delete &nbsp;•&nbsp; click ruler = move playhead
+  </p>
+
+  <section class="result" id="result" hidden>
+    <h2>Rendered mix</h2>
+    <audio id="result-audio" controls></audio>
+    <a id="result-download" class="render" href="#">⬇ Download</a>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="{{ url_for('static', filename='editor.js') }}"></script>
+</body>
+</html>

@@ -19,6 +19,7 @@ import uuid
 from flask import (
     Flask,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -27,7 +28,8 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from mashup import TrackSpec, VolumeSegment, build_mashup
+from mashup import ClipSpec, EnvelopePoint, TrackSpec, VolumeSegment, build_mashup, render_mix
+from mashup.audio import AudioClip, detect_bpm
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -138,9 +140,103 @@ def _track_from_form(letter: str) -> TrackSpec | None:
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Routes — DAW-style editor (primary UI)
 # ---------------------------------------------------------------------------
 @app.route("/", methods=["GET"])
+def editor():
+    return render_template("editor.html")
+
+
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """Store one audio file; return its id, duration and detected BPM."""
+    path = _save_upload("file")
+    if path is None:
+        return jsonify(error="No usable audio file received."), 400
+    try:
+        clip = AudioClip.load(path)
+        bpm = detect_bpm(clip)
+    except Exception as exc:
+        return jsonify(error=f"Could not decode audio: {exc}"), 400
+    file_id = os.path.basename(path)
+    return jsonify(
+        id=file_id,
+        url=url_for("serve_upload", filename=file_id),
+        name=file_id.split("_", 1)[-1],
+        duration_ms=clip.duration_ms,
+        bpm=round(bpm, 1),
+    )
+
+
+@app.route("/uploads/<path:filename>")
+def serve_upload(filename: str):
+    """Serve raw uploads so the editor can decode them for waveforms/preview."""
+    return send_from_directory(UPLOAD_DIR, filename)
+
+
+@app.route("/api/render", methods=["POST"])
+def api_render():
+    """Render the editor's timeline (JSON edit list) to an audio file."""
+    data = request.get_json(silent=True) or {}
+    clips_in = data.get("clips") or []
+    if not clips_in:
+        return jsonify(error="Nothing to render — add at least one clip."), 400
+
+    clips: list[ClipSpec] = []
+    for c in clips_in:
+        file_id = os.path.basename(str(c.get("file_id", "")))
+        path = os.path.join(UPLOAD_DIR, file_id)
+        if not file_id or not os.path.isfile(path):
+            return jsonify(error=f"Unknown file id: {file_id!r}"), 400
+        try:
+            clips.append(
+                ClipSpec(
+                    path=path,
+                    trim_start_ms=int(c.get("trim_start_ms", 0)),
+                    trim_end_ms=(int(c["trim_end_ms"]) if c.get("trim_end_ms") is not None else None),
+                    stretch_rate=float(c.get("stretch_rate", 1.0)),
+                    gain_db=float(c.get("gain_db", 0.0)),
+                    offset_ms=int(c.get("offset_ms", 0)),
+                    fade_in_ms=int(c.get("fade_in_ms", 0)),
+                    fade_out_ms=int(c.get("fade_out_ms", 0)),
+                    envelope=[
+                        EnvelopePoint(float(p["t_ms"]), float(p["gain_db"]))
+                        for p in (c.get("envelope") or [])
+                    ],
+                )
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            return jsonify(error=f"Bad clip data: {exc}"), 400
+
+    output_format = data.get("output_format", "mp3")
+    if output_format not in ALLOWED_EXTENSIONS:
+        output_format = "mp3"
+    out_name = f"mashup_{uuid.uuid4().hex}.{output_format}"
+    out_path = os.path.join(OUTPUT_DIR, out_name)
+
+    try:
+        duration_ms = render_mix(
+            clips,
+            out_path,
+            master_gain_db=float(data.get("master_gain_db", 0.0)),
+            normalize=bool(data.get("normalize", True)),
+            output_format=output_format,
+        )
+    except Exception as exc:
+        return jsonify(error=f"Render failed: {exc}"), 500
+
+    return jsonify(
+        url=url_for("serve_output", filename=out_name),
+        download_url=url_for("download_output", filename=out_name),
+        filename=out_name,
+        duration_ms=duration_ms,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes — classic form UI (kept at /classic)
+# ---------------------------------------------------------------------------
+@app.route("/classic", methods=["GET"])
 def index():
     return render_template("index.html")
 
