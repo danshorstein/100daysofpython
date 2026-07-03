@@ -96,22 +96,21 @@ input[type="range"] { accent-color: var(--accent); }
   border-radius: 6px; padding: 0.05rem 0.45rem; font-size: 0.8rem;
 }
 #head1 .badge { background: var(--accent-2); }
-.loadbtn {
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px;
-  padding: 0.22rem 0.6rem; font-size: 0.78rem; cursor: pointer;
-  position: relative;
+/* A real, visible, native file input — deliberately not hidden behind a
+   label. Hidden-input + label-click patterns are unreliable across some
+   Safari versions and browser extensions; a native control can't fail to
+   open its own picker. Themed via ::file-selector-button so it still
+   matches the rest of the UI. */
+.file-input {
+  max-width: 108px;
+  font-size: 0.68rem;
+  color: var(--muted);
 }
-/* Visually hidden (not display:none) — Safari/iOS won't forward a label
-   click to a file input hidden with display:none, so it silently fails
-   to open the picker. This keeps it clickable while invisible. */
-.loadbtn input {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.file-input::file-selector-button,
+.file-input::-webkit-file-upload-button {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px;
+  padding: 0.22rem 0.5rem; font-size: 0.72rem; cursor: pointer;
+  color: var(--text); margin-right: 0.4rem;
 }
 .tname { font-size: 0.74rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbpm { font-size: 0.7rem; color: var(--muted); min-height: 0.9rem; }
