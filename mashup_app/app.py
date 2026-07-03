@@ -45,6 +45,23 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.secret_key = os.environ.get("MASHUP_SECRET_KEY", "dev-mashup-key")
 
 
+@app.context_processor
+def inject_asset_url():
+    """``asset_url('editor.js')`` appends a mtime-based ``?v=`` so a plain
+    page reload always fetches the current file instead of a stale cached
+    copy after a deploy/update."""
+
+    def asset_url(filename: str) -> str:
+        path = os.path.join(app.static_folder, filename)
+        try:
+            version = int(os.path.getmtime(path))
+        except OSError:
+            version = 0
+        return url_for("static", filename=filename, v=version)
+
+    return {"asset_url": asset_url}
+
+
 # ---------------------------------------------------------------------------
 # Small parsing helpers (form fields are all strings)
 # ---------------------------------------------------------------------------

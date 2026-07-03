@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mashup Studio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎚️</text></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='editor.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('editor.css') }}">
 </head>
 <body>
   <header class="topbar">
@@ -110,6 +110,6 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="{{ url_for('static', filename='editor.js') }}"></script>
+  <script src="{{ asset_url('editor.js') }}"></script>
 </body>
 </html>

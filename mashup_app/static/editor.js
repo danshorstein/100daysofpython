@@ -559,6 +559,21 @@ function zoomFit() {
   draw();
 }
 
+// Drive the click ourselves rather than relying on the browser's native
+// label -> file-input click forwarding, which is unreliable on some
+// Safari versions when the input is visually hidden. Calling input.click()
+// synchronously inside a real click handler still counts as a user
+// gesture, so this works everywhere.
+document.querySelectorAll(".loadbtn").forEach((label) => {
+  const input = label.querySelector("input[type=file]");
+  label.addEventListener("click", (e) => {
+    if (e.target !== input) {
+      e.preventDefault();
+      input.click();
+    }
+  });
+});
+
 document.querySelectorAll(".file-input").forEach((inp) => {
   inp.addEventListener("change", () => {
     if (inp.files[0]) uploadTrack(Number(inp.dataset.track), inp.files[0]);
