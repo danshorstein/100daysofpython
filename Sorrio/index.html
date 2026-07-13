@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Sorrio — the self-playing side scroller</title>
 <style>
   :root {
@@ -17,6 +18,8 @@
     background: #0d0f17;
     color: var(--ink);
     font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
   }
   .wrap {
     max-width: 1024px;
@@ -48,7 +51,9 @@
     border-radius: 8px;
     image-rendering: pixelated;
     display: block;
-    touch-action: manipulation;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .panel {
     background: var(--panel);
@@ -104,17 +109,22 @@
   .legend { font-size: 12px; color: #9aa0b5; line-height: 1.6; }
   .legend b { color: #ffd23f; }
   footer { text-align: center; margin-top: 10px; color: #6b7088; font-size: 12px; }
-  /* on-screen controls for touch devices */
-  .touchpad { display: none; gap: 10px; justify-content: center; margin: 4px 0 2px; }
-  .touchpad.show { display: flex; }
-  .tbtn {
-    flex: 1; max-width: 110px; padding: 16px 0;
-    font-size: 20px; background: #2c3047; color: var(--ink);
-    border: 2px solid #000; border-radius: 10px; touch-action: manipulation;
-    user-select: none; -webkit-user-select: none;
+  #psychoBtn.on {
+    background: #7b1fa2; color: #fff;
+    animation: psychopulse 0.8s infinite alternate;
   }
-  .tbtn.jump { background: #e52521; color: #fff; font-size: 16px; }
-  .tbtn:active { transform: translateY(2px); filter: brightness(1.2); }
+  @keyframes psychopulse {
+    from { box-shadow: 0 0 4px 1px #e040fb; }
+    to   { box-shadow: 0 0 14px 4px #e040fb; }
+  }
+  /* phone-sized screens: tighter chrome, bigger game */
+  @media (max-width: 560px) {
+    .wrap { padding: 6px; }
+    h1 { font-size: 30px; }
+    .tag { font-size: 12px; }
+    button { padding: 10px 12px; font-size: 13px; }
+    footer { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -132,16 +142,14 @@
         <button id="pauseBtn" class="alt">Pause</button>
         <button id="resetBtn" class="alt">Restart</button>
         <button id="muteBtn" class="alt">🔊 Sound</button>
-      </div>
-      <div class="touchpad" id="touchpad">
-        <button class="tbtn" id="t-left" aria-label="Left">◀</button>
-        <button class="tbtn" id="t-right" aria-label="Right">▶</button>
-        <button class="tbtn jump" id="t-jump" aria-label="Jump">JUMP</button>
+        <button id="psychoBtn" class="alt">😈 Psycho</button>
       </div>
       <div class="legend" id="hint">
-        Auto-Pilot: <b>Sorrio</b> runs, jumps, bonks ?-blocks and stomps on his own. Switch to Manual
-        (or just grab the touch buttons) to drive with <b>←</b> <b>→</b> and <b>Space</b>.
-        Tap the screen after a run to restart.
+        Auto-Pilot: <b>Sorrio</b> runs, jumps, bonks ?-blocks and stomps on his own.
+        On a phone: touch the <b>left half</b> of the screen for a joystick, <b>tap the right half</b>
+        to jump — tap again mid-air to <b>double jump</b>, then <b>hold</b> to <b>FLY</b>.
+        Keyboard: <b>←</b> <b>→</b> and <b>Space</b>. Tap the screen after a run to restart.
+        And whatever you do… don't press 😈.
       </div>
     </div>
 
@@ -182,7 +190,9 @@
         <b>Swoopio</b> — dive-bombing bird<br>
         <b>Shroomio</b> — heart mushroom (+1 ♥)<br>
         <b>Starrio</b> — invincibility star<br>
-        <b>Lord Snortio</b> — the boss who hoards loins
+        <b>Lord Snortio</b> — the boss who hoards loins<br>
+        <b>😈 Psycho Mode</b> — Snortio's fever dream. The ground lies,
+        the coins lie, the flag lies. Trust nothing.
       </div>
     </div>
   </div>
@@ -219,10 +229,14 @@
   const JUMP_V = -11.6;
   const TILE = 32;
   const STAR_TIME = 480;
+  const FLY_MAX = 260; // wing fuel: how long Sorrio can fly per landing
 
   // ---- state ----
   let level, player, camX, keys, mode, paused, gameOver, won, winT, tick;
   let metrics, particles, popups, shake, freezeT, bestSaved, hurtLog;
+  let psycho = false;              // 😈
+  let chaos, nextChaosAt, chaosCount;
+  const touchUI = { joyId: null, joyOx: 0, joyOy: 0, joyDx: 0, jumpId: null, jumpX: 0, jumpY: 0 };
   let best = 0;
   try { best = +localStorage.getItem("sorrio-best") || 0; } catch (e) {}
 
@@ -295,6 +309,10 @@
       bossHit(){ tone(120, 45, 0.25, "sawtooth", 0.15); },
       win()    { arp([72, 76, 79, 84, 88, 84, 88], 0.11, 0.3, "square", 0.10); },
       over()   { arp([64, 60, 55, 48], 0.18, 0.4, "triangle", 0.11); },
+      doubleJump() { arp([72, 79], 0.05, 0.12, "square", 0.10); },
+      flap()   { tone(500, 340, 0.06, "triangle", 0.05); },
+      psycho() { arp([70, 64, 70, 64, 76], 0.07, 0.16, "sawtooth", 0.08); },
+      laugh()  { arp([67, 64, 60, 55, 52], 0.09, 0.2, "square", 0.09); },
     };
 
     function tickMusic(fast) {
@@ -452,8 +470,34 @@
     const flag = { x: length - 260, y: GROUND_Y };
     const castle = { x: length - 180 };
 
+    // ---- 😈 psycho-mode treachery ----
+    const fakes = [];   // ground that crumbles underfoot
+    const trolls = [];  // invisible blocks that appear mid-jump
+    let fakeFlag = null;
+    if (psycho) {
+      // fake ground: looks identical, collapses when stood on
+      for (let i = 0; i < 10; i++) {
+        let fx, tries = 0;
+        do { fx = 900 + rand() * (length - 2000); tries++; }
+        while (inGapR(fx - 150, 60 + 300) && tries < 24);
+        if (inGapR(fx - 150, 60 + 300)) continue;
+        const fw = 40 + rand() * 30;
+        fakes.push({ x0: fx, x1: fx + fw, state: 0, t: 0 });
+      }
+      // troll blocks: materialize when you jump into their airspace
+      for (let i = 0; i < 8; i++) {
+        const tx = 900 + rand() * (length - 1800);
+        trolls.push({ x: tx, y: GROUND_Y - 120, w: 28, h: 28, revealed: false });
+      }
+      // some coins are lies
+      for (const c of coins) if (rand() < 0.12) c.mimic = true;
+      // a flag that is exactly where you'd want a flag to be. it isn't.
+      fakeFlag = { x: length * 0.52, fled: 0, gone: false, taunted: false };
+    }
+
     return { length, platforms, coins, enemies, gaps, solids, qblocks, items,
              clouds, hills, mountains, bushes, flag, castle,
+             fakes, trolls, fakeFlag,
              totalCoins: coins.length };
   }
 
@@ -464,6 +508,7 @@
       vx: 0, vy: 0, onGround: false, face: 1,
       hp: 4, invuln: 0, dead: false, deathT: 0, walkT: 0,
       starT: 0, combo: 0, squashT: 0, coyote: 0, jbuf: 0, prevJump: false,
+      airJumps: 1, flyFuel: FLY_MAX, spinT: 0, flying: false,
     };
     camX = 0;
     keys = {};
@@ -479,6 +524,9 @@
     particles = [];
     popups = [];
     shake = { t: 0, mag: 0 };
+    chaos = null;
+    nextChaosAt = 350;
+    chaosCount = 0;
   }
 
   // ================================================================== juice
@@ -540,7 +588,9 @@
   });
   window.addEventListener("keyup", (e) => { keys[e.key] = false; });
   window.addEventListener("pointerdown", () => Sound.unlock());
-  canvas.addEventListener("pointerdown", () => { if (gameOver) reset(); });
+  // mouse restart; touch restart lives in the touchstart handler (whose
+  // preventDefault suppresses the synthetic click, so no double-reset)
+  canvas.addEventListener("click", () => { if (gameOver) reset(); });
 
   // ========================================================== auto-pilot AI
   // Sorrio's brain: deterministic lookahead. Jump pits with room to spare,
@@ -553,11 +603,14 @@
   function autoPilot() {
     const px = player.x;
 
-    // airborne: commit — hold right, no second-guessing mid-flight
+    // airborne: commit — hold right; but if we're dropping into a pit,
+    // use the double jump and FLY out like a professional
     if (!player.onGround) {
       keys.ArrowRight = true;
       keys.ArrowLeft = false;
-      keys[" "] = false;
+      const cx = player.x + player.w / 2;
+      const sinking = player.vy > 1 && player.y + player.h > GROUND_Y - 60;
+      keys[" "] = sinking && inGap(cx) && player.flyFuel > 0;
       return;
     }
 
@@ -739,14 +792,17 @@
   }
 
   function playerStep() {
-    const left = keys.ArrowLeft;
-    const right = keys.ArrowRight;
+    let left = keys.ArrowLeft;
+    let right = keys.ArrowRight;
+    if (chaosIs("reverse")) { const t = left; left = right; right = t; } // 😈
     const jumpKey = keys[" "] || keys.Space || keys.ArrowUp;
+    const gravScale = chaosIs("moon") ? 0.45 : chaosIs("heavy") ? 1.6 : 1;
+    const maxSpd = chaosIs("speed") ? MAX_SPEED * 1.6 : MAX_SPEED;
 
     if (left)  { player.vx -= MOVE; player.face = -1; }
     if (right) { player.vx += MOVE; player.face = 1; }
     if (!left && !right) player.vx *= FRICTION;
-    player.vx = clamp(player.vx, -MAX_SPEED, MAX_SPEED);
+    player.vx = clamp(player.vx, -maxSpd, maxSpd);
 
     // coyote time + jump buffering for a fair, snappy feel
     if (player.onGround) player.coyote = 7; else player.coyote--;
@@ -754,16 +810,48 @@
     else player.jbuf = Math.max(0, player.jbuf - 1);
     player.prevJump = jumpKey;
 
-    if (player.jbuf > 0 && player.coyote > 0) {
-      player.vy = JUMP_V;
-      player.jbuf = 0; player.coyote = 0;
-      player.onGround = false;
-      metrics.style += 1;
-      Sound.sfx.jump();
-      dust(player.x + player.w / 2, player.y + player.h, 4);
+    if (player.jbuf > 0) {
+      if (player.coyote > 0) {
+        // ground jump
+        player.vy = JUMP_V;
+        player.jbuf = 0; player.coyote = 0;
+        player.onGround = false;
+        metrics.style += 1;
+        Sound.sfx.jump();
+        dust(player.x + player.w / 2, player.y + player.h, 4);
+      } else if (player.airJumps > 0) {
+        // double jump: a mid-air somersault that unlocks the wings
+        player.airJumps--;
+        player.vy = JUMP_V * 0.9;
+        player.jbuf = 0;
+        player.spinT = 16;
+        metrics.style += 3;
+        Sound.sfx.doubleJump();
+        burst(player.x + player.w / 2, player.y + player.h, 8,
+              ["#fff", "#a0d8ff", "#ffd23f"], 2.5, 0.08, 20, 2);
+      }
     }
     // variable jump height (manual only — the AI taps once)
     if (mode === "manual" && !jumpKey && player.vy < -2) player.vy *= 0.86;
+
+    // FLIGHT: once the double jump is spent, holding jump beats his wings.
+    // Lift only ever ADDS — it never claws back the somersault's launch speed.
+    player.flying = false;
+    if (!player.onGround && player.airJumps === 0 && jumpKey && player.flyFuel > 0) {
+      if (player.vy > -4.2) {
+        player.vy = Math.max(-4.2, player.vy - (GRAVITY * gravScale + 0.55));
+      }
+      player.flyFuel--;
+      player.flying = true;
+      if ((tick & 3) === 0) {
+        particles.push({
+          x: player.x + (player.face > 0 ? 0 : player.w), y: player.y + 20,
+          vx: -player.face * (1 + Math.random()), vy: 0.5 + Math.random(),
+          life: 16, maxLife: 16, size: 2, grav: 0.02, color: "#e8f4ff",
+        });
+      }
+      if ((tick % 9) === 0) Sound.sfx.flap();
+    }
 
     // --- horizontal move + solid resolution ---
     player.x += player.vx;
@@ -775,11 +863,26 @@
     }
 
     // --- vertical move + resolution ---
-    player.vy += GRAVITY;
+    player.vy += GRAVITY * gravScale;
     const prevVy = player.vy;
     player.y += player.vy;
     const wasGround = player.onGround;
     player.onGround = false;
+
+    // 😈 troll blocks: pop into existence right where your head is going
+    if (psycho && player.vy < 0) {
+      for (const t of level.trolls) {
+        if (t.revealed) continue;
+        if (player.x + player.w > t.x && player.x < t.x + t.w &&
+            player.y > t.y && player.y - (t.y + t.h) < 44) {
+          t.revealed = true;
+          level.qblocks.push({ x: t.x, y: t.y, w: t.w, h: t.h, used: true, bounceT: 8 });
+          popup(t.x + t.w / 2, t.y - 8, "😈 SURPRISE!", "#e040fb", 14);
+          addShake(3, 6);
+          Sound.sfx.bonk();
+        }
+      }
+    }
 
     for (const s of allSolids()) {
       if (!rectsOverlap(player, s)) continue;
@@ -837,10 +940,31 @@
     // bounds
     if (player.x < 0) { player.x = 0; player.vx = 0; }
     if (player.x + player.w > level.length) player.x = level.length - player.w;
+    if (player.y < -50) { player.y = -50; if (player.vy < 0) player.vy = 0; } // sky ceiling
 
     if (Math.abs(player.vx) > 0.4 && player.onGround) {
       player.walkT += 0.3;
       if ((tick & 7) === 0) dust(player.x + (player.face > 0 ? 0 : player.w), player.y + player.h, 1);
+    }
+
+    // wings recover on solid ground; the somersault re-arms
+    if (player.onGround) {
+      player.airJumps = 1;
+      player.flyFuel = Math.min(FLY_MAX, player.flyFuel + 5);
+    }
+    if (player.spinT > 0) player.spinT--;
+
+    // 😈 fake ground crumbles underfoot
+    if (psycho && player.onGround && player.y + player.h >= GROUND_Y - 1) {
+      const cx2 = player.x + player.w / 2;
+      for (const f of level.fakes) {
+        if (f.state === 0 && cx2 > f.x0 && cx2 < f.x1) {
+          f.state = 1; f.t = 12;
+          addShake(4, 8);
+          Sound.sfx.bonk();
+          popup(cx2, GROUND_Y - 16, "?!", "#e040fb", 13);
+        }
+      }
     }
 
     if (player.invuln > 0) player.invuln--;
@@ -985,6 +1109,20 @@
         continue;
       }
 
+      if (en.fallingIn) {
+        // dropped from the sky (😈 rain / mimic coins): fall until landing
+        en.vy = (en.vy || 0) + GRAVITY;
+        en.y += en.vy;
+        if (en.y + en.h >= GROUND_Y && !inGap(en.x + en.w / 2)) {
+          en.y = GROUND_Y - en.h;
+          en.fallingIn = false;
+          dust(en.x + en.w / 2, en.y + en.h, 4);
+        }
+        if (en.y > H + 80) en.alive = false;
+        handleEnemyContact(en);
+        continue;
+      }
+
       // patrol walkers
       en.x += en.vx;
       if (en.x < en.baseX - en.range) en.vx = Math.abs(en.vx);
@@ -1098,10 +1236,19 @@
       const cb = { x: c.x - 8, y: c.y - 8, w: 16, h: 16 };
       if (rectsOverlap(player, cb)) {
         c.taken = true;
-        metrics.coins++;
-        metrics.style += 1;
-        burst(c.x, c.y, 5, ["#ffd23f", "#fff2b0"], 2, 0.1, 16, 2);
-        Sound.sfx.coin();
+        if (c.mimic) {
+          // 😈 that coin was a lie
+          popup(c.x, c.y - 14, "GOTCHA! 😈", "#e040fb", 15);
+          burst(c.x, c.y, 12, ["#e040fb", "#7b1fa2", "#000"], 3, 0.12, 24, 3);
+          spawnFallingGoombrian(c.x);
+          addShake(3, 6);
+          Sound.sfx.laugh();
+        } else {
+          metrics.coins++;
+          metrics.style += 1;
+          burst(c.x, c.y, 5, ["#ffd23f", "#fff2b0"], 2, 0.1, 16, 2);
+          Sound.sfx.coin();
+        }
       }
     }
   }
@@ -1131,6 +1278,99 @@
     const target = player.x - W * 0.38 + player.vx * 8;
     camX += (target - camX) * 0.12;
     camX = clamp(camX, 0, level.length - W);
+  }
+
+  // ============================================================ 😈 chaos
+  const chaosIs = (type) => chaos && chaos.type === type && tick < chaos.until;
+
+  function addGap(a, b) {
+    let i = 0;
+    while (i < level.gaps.length && level.gaps[i][0] < a) i++;
+    level.gaps.splice(i, 0, [a, b]); // keep gaps sorted: the AI relies on it
+  }
+
+  function spawnFallingGoombrian(x) {
+    level.enemies.push({
+      x: x - 13, y: -40, w: 26, h: 28,
+      vx: -(0.6 + Math.random() * 0.7), kind: "goombrian",
+      alive: true, squashT: 0, spiky: false,
+      baseX: x, range: 80, fallingIn: true, vy: 0,
+    });
+  }
+
+  const CHAOS_EVENTS = [
+    { type: "reverse",   dur: 220, text: "😈 CONTROLS REVERSED" },
+    { type: "moon",      dur: 300, text: "😈 MOON GRAVITY" },
+    { type: "heavy",     dur: 240, text: "😈 HEAVY BONES" },
+    { type: "rain",      dur: 150, text: "😈 GOOMBRIAN RAIN" },
+    { type: "disco",     dur: 340, text: "😈 DISCO FEVER" },
+    { type: "mirror",    dur: 240, text: "😈 MIRROR WORLD" },
+    { type: "fakeclear", dur: 150, text: "" },
+    { type: "speed",     dur: 300, text: "😈 SPEED DEMON" },
+    { type: "ambush",    dur: 1,   text: "😈 PIPE AMBUSH" },
+  ];
+
+  function fireChaos() {
+    const ev = CHAOS_EVENTS[(Math.random() * CHAOS_EVENTS.length) | 0];
+    chaos = { type: ev.type, until: tick + ev.dur, spawnT: 0 };
+    chaosCount++;
+    if (ev.text) popup(player.x + player.w / 2, player.y - 46, ev.text, "#e040fb", 17);
+    if (ev.type === "fakeclear") Sound.sfx.win(); else Sound.sfx.psycho();
+    if (ev.type === "ambush") {
+      const pipe = level.solids.find((s) => s.x > player.x && s.x < player.x + 700);
+      if (pipe) {
+        level.enemies.push({
+          x: pipe.x + 13, y: pipe.y - 28, w: 26, h: 28,
+          vx: -0.8, kind: "sporella", alive: true, squashT: 0, spiky: true,
+          baseX: pipe.x + 13, range: 90,
+        });
+        popup(pipe.x + 26, pipe.y - 16, "😈", "#e040fb", 18);
+      } else {
+        chaos = { type: "rain", until: tick + 150, spawnT: 0 };
+      }
+    }
+  }
+
+  function updateChaos() {
+    if (!psycho || won || gameOver || player.dead) return;
+
+    // crumbling fake ground
+    for (const f of level.fakes) {
+      if (f.state === 1 && --f.t <= 0) {
+        f.state = 2;
+        addGap(f.x0, f.x1);
+        burst((f.x0 + f.x1) / 2, GROUND_Y + 10, 14, ["#c84c0c", "#8a4b14", "#58c04c"], 3, 0.2, 26, 3);
+        addShake(5, 8);
+        popup((f.x0 + f.x1) / 2, GROUND_Y - 24, "😈 BYE!", "#e040fb", 14);
+      }
+    }
+
+    // the fake flag flees when approached
+    const ff = level.fakeFlag;
+    if (ff && !ff.gone && player.x > ff.x - 150) {
+      if (!ff.taunted) {
+        ff.taunted = true;
+        popup(ff.x, GROUND_Y - 150, "😈 NOT TODAY!", "#e040fb", 16);
+        Sound.sfx.laugh();
+      }
+      ff.x += 7;
+      ff.fled += 7;
+      if (ff.fled > 560) ff.gone = true;
+    }
+
+    // the director
+    if (tick >= nextChaosAt) {
+      fireChaos();
+      nextChaosAt = tick + 300 + Math.random() * 380;
+    }
+    if (chaos && chaosIs("rain")) {
+      if (--chaos.spawnT <= 0 && (chaos.spawned || 0) < 7) {
+        chaos.spawnT = 18;
+        chaos.spawned = (chaos.spawned || 0) + 1;
+        spawnFallingGoombrian(camX + 180 + Math.random() * 400);
+      }
+    }
+    if (chaos && tick >= chaos.until) chaos = null;
   }
 
   // ---------------------------------------------------------------- update
@@ -1170,6 +1410,7 @@
 
     if (mode === "auto") autoPilot();
     playerStep();
+    updateChaos();
     updateEnemies();
     updateItems();
     updateCoins();
@@ -1284,6 +1525,23 @@
     ctx.lineWidth = 1;
     for (let sx = -(camX % 32); sx <= W; sx += 32) {
       ctx.beginPath(); ctx.moveTo(sx, GROUND_Y + 6); ctx.lineTo(sx, H); ctx.stroke();
+    }
+
+    // 😈 crumbling fake ground shudders and cracks
+    for (const f of level.fakes) {
+      if (f.state !== 1) continue;
+      const x0 = s2(f.x0), x1 = s2(f.x1);
+      if (x1 < 0 || x0 > W) continue;
+      const j = (Math.random() - 0.5) * 3;
+      ctx.strokeStyle = "#3a1a05";
+      ctx.lineWidth = 2;
+      for (let cx = x0 + 4; cx < x1; cx += 9) {
+        ctx.beginPath();
+        ctx.moveTo(cx + j, GROUND_Y);
+        ctx.lineTo(cx - 3 + j, GROUND_Y + 14);
+        ctx.lineTo(cx + 3 + j, GROUND_Y + 26);
+        ctx.stroke();
+      }
     }
 
     // bushes sit on the grass line
@@ -1647,6 +1905,34 @@
       return;
     }
 
+    // wings appear once the double jump is spent, until he lands
+    if (!player.onGround && player.airJumps === 0) {
+      const flap = player.flying ? Math.sin(tick * 0.9) * 10 : 4;
+      const bx = player.face > 0 ? px + 2 : px + player.w - 2;
+      ctx.fillStyle = "rgba(240,248,255,0.92)";
+      ctx.beginPath();
+      ctx.moveTo(bx, player.y + 14);
+      ctx.lineTo(bx - player.face * 17, player.y + 2 - flap);
+      ctx.lineTo(bx - player.face * 9, player.y + 20);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(bx, player.y + 17);
+      ctx.lineTo(bx - player.face * 21, player.y + 13 - flap * 0.6);
+      ctx.lineTo(bx - player.face * 11, player.y + 25);
+      ctx.fill();
+    }
+
+    // double-jump somersault
+    if (player.spinT > 0) {
+      ctx.save();
+      ctx.translate(px + player.w / 2, player.y + player.h / 2);
+      ctx.rotate(((16 - player.spinT) / 16) * Math.PI * 2 * player.face);
+      drawDude(-player.w / 2, -player.h / 2, player.w, player.h,
+               { ...o, onGround: false, squashT: 0 });
+      ctx.restore();
+      return;
+    }
+
     drawDude(px, player.y, player.w, player.h, o);
   }
 
@@ -1664,6 +1950,37 @@
       ctx.lineTo(x + 40 + wave, GROUND_Y - 126);
       ctx.lineTo(x + 5, GROUND_Y - 114);
       ctx.fill();
+    }
+
+    // 😈 the fake flag: indistinguishable until it runs away from you
+    const ff = level.fakeFlag;
+    if (ff && !ff.gone) {
+      const fx = s2(ff.x);
+      if (fx > -50 && fx < W + 50) {
+        const lean = ff.fled > 0 ? 0.25 : 0;
+        ctx.save();
+        ctx.translate(fx, GROUND_Y);
+        ctx.rotate(lean);
+        ctx.fillStyle = "#444";
+        ctx.fillRect(0, -140, 5, 140);
+        ctx.fillStyle = "#ddd";
+        ctx.beginPath(); ctx.arc(2, -142, 5, 0, 7); ctx.fill();
+        const wob = Math.sin(tick * (ff.fled > 0 ? 0.5 : 0.1)) * 4;
+        ctx.fillStyle = "#2fbf4f";
+        ctx.beginPath();
+        ctx.moveTo(5, -138);
+        ctx.lineTo(40 + wob, -126);
+        ctx.lineTo(5, -114);
+        ctx.fill();
+        if (ff.fled > 0) {
+          // little legs. flags shouldn't have legs.
+          ctx.fillStyle = "#444";
+          const step = Math.sin(tick * 0.6) * 5;
+          ctx.fillRect(-2 + step, -4, 4, 6);
+          ctx.fillRect(3 - step, -4, 4, 6);
+        }
+        ctx.restore();
+      }
     }
     drawCastle();
   }
@@ -1744,6 +2061,18 @@
       ctx.fillRect(W / 2 - 60, 40, w, 6);
     }
 
+    // wing fuel: shown whenever the wings are out or recovering
+    if (player.flyFuel < FLY_MAX || (!player.onGround && player.airJumps === 0)) {
+      const w = (player.flyFuel / FLY_MAX) * 120;
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(W / 2 - 64, 52, 128, 12);
+      ctx.fillStyle = player.flying ? "#fff" : "#a0d8ff";
+      ctx.fillRect(W / 2 - 60, 55, w, 6);
+      ctx.fillStyle = "#a0d8ff";
+      ctx.font = "9px monospace";
+      ctx.fillText("WINGS", W / 2 - 60, 51);
+    }
+
     if (mode === "auto") {
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.fillRect(W - 118, 8, 110, 20);
@@ -1751,6 +2080,48 @@
       ctx.font = "11px monospace";
       ctx.fillText("◉ AUTO-PILOT", W - 110, 22);
     }
+
+    if (psycho) {
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(W - 118, mode === "auto" ? 32 : 8, 110, 20);
+      ctx.fillStyle = `hsl(${290 + Math.sin(tick * 0.15) * 20} 90% ${60 + Math.sin(tick * 0.3) * 12}%)`;
+      ctx.font = "bold 11px monospace";
+      ctx.fillText("😈 PSYCHO", W - 106, mode === "auto" ? 46 : 22);
+    }
+  }
+
+  function drawTouchUI() {
+    if (touchUI.joyId !== null) {
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(touchUI.joyOx, touchUI.joyOy, 34, 0, 7); ctx.stroke();
+      const kx = touchUI.joyOx + clamp(touchUI.joyDx, -30, 30);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath(); ctx.arc(kx, touchUI.joyOy, 16, 0, 7); ctx.fill();
+    }
+    if (touchUI.jumpId !== null) {
+      ctx.fillStyle = player.flying ? "rgba(160,216,255,0.5)" : "rgba(229,37,33,0.45)";
+      ctx.beginPath(); ctx.arc(touchUI.jumpX, touchUI.jumpY, 26, 0, 7); ctx.fill();
+    }
+  }
+
+  function drawFakeClear() {
+    if (!chaosIs("fakeclear")) return;
+    const remain = chaos.until - tick;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    if (remain > 60) {
+      ctx.fillStyle = "#ffd23f";
+      ctx.font = "bold 40px 'Trebuchet MS', sans-serif";
+      ctx.fillText("STAGE CLEAR!", W / 2, H / 2 - 10);
+    } else {
+      if (!chaos.laughed) { chaos.laughed = true; Sound.sfx.laugh(); addShake(5, 8); }
+      ctx.fillStyle = "#e040fb";
+      ctx.font = "bold 38px 'Trebuchet MS', sans-serif";
+      ctx.fillText("JUST KIDDING 😈", W / 2, H / 2 - 10);
+    }
+    ctx.textAlign = "left";
   }
 
   function drawBanner() {
@@ -1773,6 +2144,13 @@
   }
 
   function render() {
+    // 😈 whole-screen chaos: disco hue spin, mirrored world
+    let filter = "";
+    if (chaosIs("disco")) filter = `hue-rotate(${(tick * 6) % 360}deg) saturate(1.7)`;
+    if (canvas.style.filter !== filter) canvas.style.filter = filter;
+    const flip = chaosIs("mirror") ? "scaleX(-1)" : "";
+    if (canvas.style.transform !== flip) canvas.style.transform = flip;
+
     ctx.save();
     if (shake.t > 0) {
       shake.t--;
@@ -1792,6 +2170,8 @@
     drawParticles();
     ctx.restore();
     drawHud();
+    drawTouchUI();
+    drawFakeClear();
     drawBanner();
   }
 
@@ -1876,41 +2256,95 @@
     Sound.unlock();
     muteBtn.textContent = Sound.toggleMute() ? "🔇 Muted" : "🔊 Sound";
   });
+  const psychoBtn = document.getElementById("psychoBtn");
+  psychoBtn.addEventListener("click", () => {
+    Sound.unlock();
+    psycho = !psycho;
+    psychoBtn.classList.toggle("on", psycho);
+    psychoBtn.textContent = psycho ? "😈 PSYCHO ON" : "😈 Psycho";
+    reset();
+    pauseBtn.textContent = "Pause";
+    if (psycho) {
+      Sound.sfx.psycho();
+      hint.innerHTML = "😈 <b>PSYCHO MODE</b>: the ground lies, coins bite, blocks appear out of thin air, the flag has legs, gravity has moods, and your controls may betray you. You were warned.";
+    }
+  });
 
-  // --------------------------------------------------- touch / on-screen pad
-  const touchpad = document.getElementById("touchpad");
-  const isTouch = window.matchMedia("(pointer: coarse)").matches ||
-                  ("ontouchstart" in window);
-  if (isTouch) touchpad.classList.add("show");
-
+  // ------------------------------------------- touch: virtual joystick + jump
+  // Left half of the screen: a joystick appears wherever your thumb lands.
+  // Right half: tap = jump, tap again mid-air = double jump, hold = FLY.
   function setManual() {
     if (mode !== "manual") {
       mode = "manual";
       modeBtn.textContent = "Mode: Manual";
-      hint.innerHTML = 'Manual: drive <b>Sorrio</b> with the on-screen buttons. Stomp <b>Goombrian</b> &amp; <b>Swoopio</b>, dodge spiky <b>Sporella</b>, bonk ?-blocks, and hit <b>Lord Snortio</b> 3×.';
+      hint.innerHTML = 'Manual: <b>left thumb</b> drives the joystick, <b>right thumb</b> taps to jump / double-jump and <b>holds to fly</b> (watch the WINGS meter). Keyboard: <b>←</b> <b>→</b> <b>Space</b>.';
     }
   }
 
-  function bindHold(id, key) {
-    const el = document.getElementById(id);
-    const down = (e) => { e.preventDefault(); Sound.unlock(); setManual(); keys[key] = true; };
-    const up   = (e) => { e.preventDefault(); keys[key] = false; };
-    el.addEventListener("touchstart", down, { passive: false });
-    el.addEventListener("touchend", up);
-    el.addEventListener("touchcancel", up);
-    el.addEventListener("mousedown", down);
-    el.addEventListener("mouseup", up);
-    el.addEventListener("mouseleave", up);
+  function toCanvas(t) {
+    const r = canvas.getBoundingClientRect();
+    const sx = r.width > 0 ? W / r.width : 1;
+    const sy = r.height > 0 ? H / r.height : 1;
+    return { x: (t.clientX - r.left) * sx, y: (t.clientY - r.top) * sy };
   }
-  bindHold("t-left", "ArrowLeft");
-  bindHold("t-right", "ArrowRight");
-  bindHold("t-jump", " ");
+
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    Sound.unlock();
+    if (gameOver) { reset(); return; }
+    setManual();
+    for (const t of Array.from(e.changedTouches)) {
+      const p = toCanvas(t);
+      if (p.x < W / 2) {
+        if (touchUI.joyId === null) {
+          touchUI.joyId = t.identifier;
+          touchUI.joyOx = p.x; touchUI.joyOy = p.y;
+          touchUI.joyDx = 0;
+        }
+      } else if (touchUI.jumpId === null) {
+        touchUI.jumpId = t.identifier;
+        touchUI.jumpX = p.x; touchUI.jumpY = p.y;
+        keys[" "] = true;
+      }
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.identifier === touchUI.joyId) {
+        touchUI.joyDx = toCanvas(t).x - touchUI.joyOx;
+        keys.ArrowRight = touchUI.joyDx > 8;
+        keys.ArrowLeft = touchUI.joyDx < -8;
+      }
+    }
+  }, { passive: false });
+
+  function onTouchEnd(e) {
+    e.preventDefault();
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.identifier === touchUI.joyId) {
+        touchUI.joyId = null;
+        touchUI.joyDx = 0;
+        keys.ArrowLeft = keys.ArrowRight = false;
+      }
+      if (t.identifier === touchUI.jumpId) {
+        touchUI.jumpId = null;
+        keys[" "] = false;
+      }
+    }
+  }
+  canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+  canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
 
   // debug/testing hook
   window.__sorrio = () => ({
-    x: player.x, y: player.y, vx: player.vx, onGround: player.onGround,
+    x: player.x, y: player.y, vx: player.vx, vy: player.vy, onGround: player.onGround,
     hp: player.hp, coins: metrics.coins, score: metrics.score,
     dist: metrics.dist, dead: player.dead, won, gameOver, hurtLog,
+    mode, psycho, chaosCount, chaosType: chaos ? chaos.type : null,
+    airJumps: player.airJumps, flyFuel: player.flyFuel, flying: player.flying,
+    keys: { left: !!keys.ArrowLeft, right: !!keys.ArrowRight, jump: !!keys[" "] },
   });
 
   // ------------------------------------------------------------------ boot
