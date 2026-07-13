@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Sorrio — the self-playing side scroller</title>
 <style>
   :root {
@@ -17,6 +18,8 @@
     background: #0d0f17;
     color: var(--ink);
     font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
   }
   .wrap {
     max-width: 1024px;
@@ -48,6 +51,9 @@
     border-radius: 8px;
     image-rendering: pixelated;
     display: block;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .panel {
     background: var(--panel);
@@ -78,7 +84,7 @@
     height: 100%;
     width: 0%;
     border-radius: 8px;
-    transition: width .25s ease, background .25s ease;
+    transition: width .15s ease, background .25s ease;
   }
   .grade {
     text-align: center;
@@ -96,19 +102,36 @@
     border: 2px solid #000; border-radius: 6px;
     padding: 8px 14px; font-weight: bold; cursor: pointer;
     font-family: inherit; font-size: 14px;
+    touch-action: manipulation;
   }
   button.alt { background: #2c3047; color: var(--ink); }
   button:active { transform: translateY(1px); }
   .legend { font-size: 12px; color: #9aa0b5; line-height: 1.6; }
   .legend b { color: #ffd23f; }
   footer { text-align: center; margin-top: 10px; color: #6b7088; font-size: 12px; }
+  #psychoBtn.on {
+    background: #7b1fa2; color: #fff;
+    animation: psychopulse 0.8s infinite alternate;
+  }
+  @keyframes psychopulse {
+    from { box-shadow: 0 0 4px 1px #e040fb; }
+    to   { box-shadow: 0 0 14px 4px #e040fb; }
+  }
+  /* phone-sized screens: tighter chrome, bigger game */
+  @media (max-width: 560px) {
+    .wrap { padding: 6px; }
+    h1 { font-size: 30px; }
+    .tag { font-size: 12px; }
+    button { padding: 10px 12px; font-size: 13px; }
+    footer { display: none; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>SORRIO</h1>
-    <div class="tag">A Mario-ish side scroller that plays itself — watch the bar graph judge its life choices.</div>
+    <div class="tag">A Mario-ish side scroller that plays itself — chiptune, combos, fireworks, and a bar graph judging its life choices.</div>
   </header>
 
   <div class="stage">
@@ -118,10 +141,15 @@
         <button id="modeBtn">Mode: Auto-Pilot</button>
         <button id="pauseBtn" class="alt">Pause</button>
         <button id="resetBtn" class="alt">Restart</button>
+        <button id="muteBtn" class="alt">🔊 Sound</button>
+        <button id="psychoBtn" class="alt">😈 Psycho</button>
       </div>
       <div class="legend" id="hint">
-        Auto-Pilot: <b>Sorrio</b> runs, jumps and stomps on his own. Switch to Manual to drive
-        with <b>←</b> <b>→</b> and <b>Space</b> to jump.
+        Auto-Pilot: <b>Sorrio</b> runs, jumps, bonks ?-blocks and stomps on his own.
+        On a phone: touch the <b>left half</b> of the screen for a joystick, <b>tap the right half</b>
+        to jump — tap again mid-air to <b>double jump</b>, then <b>hold</b> to <b>FLY</b>.
+        Keyboard: <b>←</b> <b>→</b> and <b>Space</b>. Tap the screen after a run to restart.
+        And whatever you do… don't press 😈.
       </div>
     </div>
 
@@ -158,15 +186,2171 @@
         <b>Sorrio</b> — our hero (you)<br>
         <b>Florrio</b> — his rival in green<br>
         <b>Goombrian</b> — waddling mushroom foe<br>
-        <b>Sporella</b> — spiky toad lady<br>
-        <b>Lord Snortio</b> — the boss who hoards loins
+        <b>Sporella</b> — spiky toad lady (don't touch!)<br>
+        <b>Swoopio</b> — dive-bombing bird<br>
+        <b>Shroomio</b> — heart mushroom (+1 ♥)<br>
+        <b>Starrio</b> — invincibility star<br>
+        <b>Lord Snortio</b> — the boss who hoards loins<br>
+        <b>😈 Psycho Mode</b> — Snortio's fever dream. The ground lies,
+        the coins lie, the flag lies. Trust nothing.
       </div>
     </div>
   </div>
 
-  <footer>Sorrio v1.0 · canvas + vanilla JS · no dependencies</footer>
+  <footer>Sorrio v2.0 · canvas + vanilla JS + WebAudio chiptune · no dependencies</footer>
 </div>
 
-<script src="sorrio.js"></script>
+<script>
+/* =========================================================================
+   SORRIO v2.0 — a self-playing Mario-ish side scroller.
+   Everyone's name rhymes, and a bar graph grades how the run is going.
+   New in v2: chiptune soundtrack + sfx, ?-blocks, pipes, power-ups
+   (Shroomio & Starrio), Swoopio the bird, combos, particles, screen
+   shake, squash & stretch, day/night sky, castle finale with fireworks,
+   a much smarter auto-pilot, and best-score memory.
+   Pure canvas + vanilla JS, no dependencies.
+   ========================================================================= */
+
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  const W = canvas.width;   // 640
+  const H = canvas.height;  // 360
+  const GROUND_Y = H - 48;  // top of the ground band
+
+  // ---- physics constants ----
+  const GRAVITY = 0.6;
+  const MOVE = 0.55;
+  const FRICTION = 0.82;
+  const MAX_SPEED = 4.4;
+  const JUMP_V = -11.6;
+  const TILE = 32;
+  const STAR_TIME = 480;
+  const FLY_MAX = 260; // wing fuel: how long Sorrio can fly per landing
+
+  // ---- state ----
+  let level, player, camX, keys, mode, paused, gameOver, won, winT, tick;
+  let metrics, particles, popups, shake, freezeT, bestSaved, hurtLog;
+  let psycho = false;              // 😈
+  let chaos, nextChaosAt, chaosCount;
+  const touchUI = { joyId: null, joyOx: 0, joyOy: 0, joyDx: 0, jumpId: null, jumpX: 0, jumpY: 0 };
+  let best = 0;
+  try { best = +localStorage.getItem("sorrio-best") || 0; } catch (e) {}
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  function rng(seed) {
+    // tiny deterministic PRNG so each restart is a fresh but fair level
+    let s = seed >>> 0;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  function rectsOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  // ======================================================== audio (WebAudio)
+  const Sound = (() => {
+    let ac = null, muted = false, unlocked = false;
+    let nextStep = 0, stepIdx = 0;
+    const m2f = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+    // an original 4-bar chiptune loop (C / Am / F / G arpeggios)
+    const MELODY = [72,0,76,0,79,0,76,0, 69,0,72,0,76,0,72,0,
+                    69,0,72,0,77,0,76,0, 67,0,71,0,74,0,76,0];
+    const BASS   = [48,0,60,0,48,0,60,0, 45,0,57,0,45,0,57,0,
+                    41,0,53,0,41,0,53,0, 43,0,55,0,43,0,55,0];
+
+    function unlock() {
+      if (unlocked) return;
+      unlocked = true;
+      try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        nextStep = ac.currentTime + 0.1;
+      } catch (e) { ac = null; }
+    }
+
+    function tone(f0, f1, dur, type, vol, when) {
+      if (!ac || muted) return;
+      const t = when !== undefined ? when : ac.currentTime;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(Math.max(30, f0), t);
+      if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g).connect(ac.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+
+    function arp(notes, step, dur, type, vol) {
+      if (!ac || muted) return;
+      const t0 = ac.currentTime;
+      notes.forEach((n, i) => tone(m2f(n), 0, dur, type, vol, t0 + i * step));
+    }
+
+    const sfx = {
+      jump()   { tone(280, 560, 0.15, "square", 0.10); },
+      coin()   { if (!ac) return; tone(1046, 0, 0.06, "square", 0.09);
+                 tone(1568, 0, 0.14, "square", 0.09, ac.currentTime + 0.06); },
+      stomp()  { tone(300, 70, 0.14, "square", 0.13); },
+      hurt()   { tone(220, 55, 0.35, "sawtooth", 0.12); },
+      bonk()   { tone(150, 90, 0.09, "square", 0.11); },
+      sprout() { tone(392, 784, 0.28, "square", 0.08); },
+      power()  { arp([60, 64, 67, 72], 0.07, 0.16, "square", 0.09); },
+      star()   { arp([67, 72, 76, 79, 84], 0.06, 0.14, "square", 0.09); },
+      kill()   { tone(620, 150, 0.12, "square", 0.10); },
+      bossHit(){ tone(120, 45, 0.25, "sawtooth", 0.15); },
+      win()    { arp([72, 76, 79, 84, 88, 84, 88], 0.11, 0.3, "square", 0.10); },
+      over()   { arp([64, 60, 55, 48], 0.18, 0.4, "triangle", 0.11); },
+      doubleJump() { arp([72, 79], 0.05, 0.12, "square", 0.10); },
+      flap()   { tone(500, 340, 0.06, "triangle", 0.05); },
+      psycho() { arp([70, 64, 70, 64, 76], 0.07, 0.16, "sawtooth", 0.08); },
+      laugh()  { arp([67, 64, 60, 55, 52], 0.09, 0.2, "square", 0.09); },
+    };
+
+    function tickMusic(fast) {
+      if (!ac || muted) return;
+      if (nextStep < ac.currentTime - 0.3) nextStep = ac.currentTime; // lag catch-up
+      const stepDur = fast ? 0.105 : 0.135;
+      while (nextStep < ac.currentTime + 0.15) {
+        const m = MELODY[stepIdx], b = BASS[stepIdx];
+        if (m) tone(m2f(m), 0, stepDur * 0.9, "square", 0.042, nextStep);
+        if (b) tone(m2f(b), 0, stepDur * 0.95, "triangle", 0.065, nextStep);
+        stepIdx = (stepIdx + 1) % MELODY.length;
+        nextStep += stepDur;
+      }
+    }
+
+    return {
+      unlock, sfx, tickMusic,
+      toggleMute() { muted = !muted; return muted; },
+      get muted() { return muted; },
+    };
+  })();
+
+  // ============================================================== level gen
+  function buildLevel() {
+    const rand = rng((Math.random() * 1e9) | 0);
+    const length = 6800; // world width in px
+    const platforms = [], coins = [], enemies = [], solids = [], qblocks = [], items = [];
+    const clouds = [], hills = [], mountains = [], bushes = [];
+
+    // ---- pits in the ground (kept narrow enough for a full-speed jump) ----
+    const gaps = [];
+    let x = 760;
+    while (x < length - 1000) {
+      if (rand() < 0.5) {
+        const gw = 60 + rand() * 40;
+        gaps.push([x, x + gw]);
+        x += gw + 300 + rand() * 220;
+      } else {
+        x += 340 + rand() * 220;
+      }
+    }
+    const inGapR = (gx, gw) => gaps.some((g) => gx + gw > g[0] - 10 && gx < g[1] + 10);
+
+    // ---- pipes (solid, must be hopped; keep the landing zone beyond each
+    // pipe clear of pits — a hop that ends in a hole is a trap) ----
+    for (let i = 0; i < 6; i++) {
+      let px, tries = 0;
+      do { px = 520 + rand() * (length - 1800); tries++; }
+      while (inGapR(px - 60, 52 + 280) && tries < 24);
+      if (inGapR(px - 60, 52 + 280)) continue;
+      const ph = 42 + ((rand() * 3) | 0) * 13;
+      solids.push({ x: px, y: GROUND_Y - ph, w: 52, h: ph, kind: "pipe" });
+    }
+
+    // ---- ?-blocks (bonk from below: coins & power-ups) ----
+    const nearPipe = (gx, gw) => solids.some((s) => gx + gw > s.x - 80 && gx < s.x + s.w + 80);
+    for (let i = 0; i < 9; i++) {
+      let qx, tries = 0;
+      do { qx = 440 + rand() * (length - 1700); tries++; }
+      while ((inGapR(qx - 40, 96 + 220) || nearPipe(qx, 96)) && tries < 24);
+      if (inGapR(qx - 40, 96 + 220) || nearPipe(qx, 96)) continue;
+      const n = 1 + ((rand() * 3) | 0);
+      for (let k = 0; k < n; k++) {
+        const r = rand();
+        qblocks.push({
+          x: qx + k * 34, y: GROUND_Y - 112, w: 28, h: 28,
+          used: false, bounceT: 0,
+          contains: r < 0.52 ? "coin" : (r < 0.84 ? "shroomio" : "starrio"),
+        });
+      }
+    }
+
+    // ---- floating platforms with coins on them (never dangling over pits:
+    // walking off the far end into a hole is a trap, not a challenge) ----
+    for (let i = 0; i < 26; i++) {
+      const px = 380 + rand() * (length - 900);
+      const py = GROUND_Y - (70 + rand() * 130);
+      const pw = TILE * (2 + ((rand() * 3) | 0));
+      if (inGapR(px - 40, pw + 80)) continue;
+      platforms.push({ x: px, y: py, w: pw, h: 18 });
+      const nCoins = 1 + ((rand() * 4) | 0);
+      for (let c = 0; c < nCoins; c++) {
+        coins.push({ x: px + 14 + c * 22, y: py - 28, taken: false, t: rand() * 6 });
+      }
+    }
+
+    // ---- ground-level coin arcs ----
+    for (let i = 0; i < 15; i++) {
+      const cx = 500 + rand() * (length - 1100);
+      for (let c = 0; c < 5; c++) {
+        const cy = GROUND_Y - 40 - Math.sin((c / 4) * Math.PI) * 60;
+        coins.push({ x: cx + c * 26, y: cy, taken: false, t: rand() * 6 });
+      }
+    }
+
+    // ---- enemies ----
+    // Goombrian: stompable walker
+    for (let i = 0; i < 13; i++) {
+      const ex = 620 + rand() * (length - 1400);
+      enemies.push({
+        x: ex, y: GROUND_Y - 28, w: 26, h: 28,
+        vx: -(0.6 + rand() * 0.7), kind: "goombrian",
+        alive: true, squashT: 0, spiky: false,
+        baseX: ex, range: 60 + rand() * 60,
+      });
+    }
+    // Sporella: spiky, cannot be stomped
+    for (let i = 0; i < 6; i++) {
+      const ex = 760 + rand() * (length - 1600);
+      enemies.push({
+        x: ex, y: GROUND_Y - 28, w: 26, h: 28,
+        vx: -(0.5 + rand() * 0.6), kind: "sporella",
+        alive: true, squashT: 0, spiky: true,
+        baseX: ex, range: 60 + rand() * 60,
+      });
+    }
+    // Swoopio: sine-wave flyer, stompable from above
+    for (let i = 0; i < 5; i++) {
+      const ex = 900 + rand() * (length - 1900);
+      enemies.push({
+        x: ex, y: GROUND_Y - 120, w: 26, h: 22,
+        vx: -(0.8 + rand() * 0.6), kind: "swoopio",
+        alive: true, squashT: 0, spiky: false, fly: true,
+        baseX: ex, baseY: GROUND_Y - 96 - rand() * 50, t: rand() * 6,
+      });
+    }
+
+    // Florrio — the green rival, a non-lethal racer who jogs ahead
+    enemies.push({
+      x: 900, y: GROUND_Y - 30, w: 24, h: 30,
+      vx: 0, kind: "florrio", alive: true, squashT: 0, spiky: false,
+      rival: true,
+    });
+
+    // Lord Snortio — the boss, near the end, guarding a pile of loins
+    const bossX = length - 480;
+    enemies.push({
+      x: bossX, y: GROUND_Y - 56, w: 52, h: 56,
+      vx: 0, kind: "snortio", alive: true, hp: 3, squashT: 0,
+      spiky: false, boss: true, baseX: bossX, t: 0, hurtT: 0, hitCd: 0,
+    });
+    for (let c = 0; c < 12; c++) {
+      coins.push({ x: bossX - 120 + (c % 6) * 24, y: GROUND_Y - 40 - ((c / 6) | 0) * 26, taken: false, t: c });
+    }
+
+    // ---- scenery ----
+    for (let i = 0; i < 34; i++) clouds.push({ x: rand() * length, y: 26 + rand() * 110, s: 0.6 + rand() * 0.8 });
+    for (let i = 0; i < 26; i++) hills.push({ x: rand() * length, w: 120 + rand() * 160 });
+    for (let i = 0; i < 10; i++) mountains.push({ x: rand() * length * 1.2, w: 260 + rand() * 260 });
+    for (let i = 0; i < 18; i++) {
+      const bx = 200 + rand() * (length - 600);
+      if (!inGapR(bx, 70)) bushes.push({ x: bx, s: 0.7 + rand() * 0.7 });
+    }
+
+    const flag = { x: length - 260, y: GROUND_Y };
+    const castle = { x: length - 180 };
+
+    // ---- 😈 psycho-mode treachery ----
+    const fakes = [];   // ground that crumbles underfoot
+    const trolls = [];  // invisible blocks that appear mid-jump
+    let fakeFlag = null;
+    if (psycho) {
+      // fake ground: looks identical, collapses when stood on
+      for (let i = 0; i < 10; i++) {
+        let fx, tries = 0;
+        do { fx = 900 + rand() * (length - 2000); tries++; }
+        while (inGapR(fx - 150, 60 + 300) && tries < 24);
+        if (inGapR(fx - 150, 60 + 300)) continue;
+        const fw = 40 + rand() * 30;
+        fakes.push({ x0: fx, x1: fx + fw, state: 0, t: 0 });
+      }
+      // troll blocks: materialize when you jump into their airspace
+      for (let i = 0; i < 8; i++) {
+        const tx = 900 + rand() * (length - 1800);
+        trolls.push({ x: tx, y: GROUND_Y - 120, w: 28, h: 28, revealed: false });
+      }
+      // some coins are lies
+      for (const c of coins) if (rand() < 0.12) c.mimic = true;
+      // a flag that is exactly where you'd want a flag to be. it isn't.
+      fakeFlag = { x: length * 0.52, fled: 0, gone: false, taunted: false };
+    }
+
+    return { length, platforms, coins, enemies, gaps, solids, qblocks, items,
+             clouds, hills, mountains, bushes, flag, castle,
+             fakes, trolls, fakeFlag,
+             totalCoins: coins.length };
+  }
+
+  function reset() {
+    level = buildLevel();
+    player = {
+      x: 80, y: GROUND_Y - 36, w: 24, h: 36,
+      vx: 0, vy: 0, onGround: false, face: 1,
+      hp: 4, invuln: 0, dead: false, deathT: 0, walkT: 0,
+      starT: 0, combo: 0, squashT: 0, coyote: 0, jbuf: 0, prevJump: false,
+      airJumps: 1, flyFuel: FLY_MAX, spinT: 0, flying: false,
+    };
+    camX = 0;
+    keys = {};
+    paused = false;
+    gameOver = false;
+    won = false;
+    winT = 0;
+    tick = 0;
+    freezeT = 0;
+    bestSaved = false;
+    metrics = { coins: 0, stomps: 0, dist: 0, style: 0, score: 0 };
+    hurtLog = [];
+    particles = [];
+    popups = [];
+    shake = { t: 0, mag: 0 };
+    chaos = null;
+    nextChaosAt = 350;
+    chaosCount = 0;
+  }
+
+  // ================================================================== juice
+  function addShake(mag, t) {
+    shake.mag = Math.max(shake.mag, mag);
+    shake.t = Math.max(shake.t, t);
+  }
+
+  function burst(x, y, n, colors, spd, grav, life, size) {
+    for (let i = 0; i < n; i++) {
+      particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * spd * 2,
+        vy: (Math.random() - 0.8) * spd,
+        life: life + Math.random() * life * 0.4,
+        maxLife: life * 1.4,
+        color: colors[(Math.random() * colors.length) | 0],
+        size: size || 3,
+        grav: grav !== undefined ? grav : 0.15,
+      });
+    }
+  }
+
+  function dust(x, y, n) {
+    burst(x, y, n || 5, ["#e8d9c0", "#d9c6a5", "#fff"], 1.6, 0.05, 18, 2);
+  }
+
+  function firework() {
+    const x = camX + 60 + Math.random() * (W - 120);
+    const y = 40 + Math.random() * 130;
+    const hue = (Math.random() * 360) | 0;
+    burst(x, y, 26, [
+      `hsl(${hue} 95% 62%)`, `hsl(${(hue + 40) % 360} 95% 70%)`, "#fff",
+    ], 5, 0.05, 46, 3);
+  }
+
+  function popup(x, y, text, color, size) {
+    popups.push({ x, y, text, color: color || "#ffd23f", life: 55, size: size || 13 });
+  }
+
+  function updateParticles() {
+    for (const p of particles) {
+      p.vy += p.grav;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life--;
+    }
+    particles = particles.filter((p) => p.life > 0);
+    for (const p of popups) { p.y -= 0.7; p.life--; }
+    popups = popups.filter((p) => p.life > 0);
+  }
+
+  // ================================================================== input
+  window.addEventListener("keydown", (e) => {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", " ", "Space"].includes(e.key)) e.preventDefault();
+    Sound.unlock();
+    keys[e.key] = true;
+    if ((e.key === "r" || e.key === "R") && gameOver) reset();
+  });
+  window.addEventListener("keyup", (e) => { keys[e.key] = false; });
+  window.addEventListener("pointerdown", () => Sound.unlock());
+  // mouse restart; touch restart lives in the touchstart handler (whose
+  // preventDefault suppresses the synthetic click, so no double-reset)
+  canvas.addEventListener("click", () => { if (gameOver) reset(); });
+
+  // ========================================================== auto-pilot AI
+  // Sorrio's brain: deterministic lookahead. Jump pits with room to spare,
+  // clear spiky things early, stomp soft things late, never leap into a pit.
+  function landingSafe() {
+    const lx = player.x + player.w / 2 + Math.max(2.5, player.vx) * 36;
+    return !inGap(lx);
+  }
+
+  function autoPilot() {
+    const px = player.x;
+
+    // airborne: commit — hold right; but if we're dropping into a pit,
+    // use the double jump and FLY out like a professional
+    if (!player.onGround) {
+      keys.ArrowRight = true;
+      keys.ArrowLeft = false;
+      const cx = player.x + player.w / 2;
+      const sinking = player.vy > 1 && player.y + player.h > GROUND_Y - 60;
+      keys[" "] = sinking && inGap(cx) && player.flyFuel > 0;
+      return;
+    }
+
+    const I = { left: false, right: true, jump: false };
+
+    // stuck watchdog: if forward progress stalls — either dead-stopped for
+    // ~5s or crawling (< 150px per 10s window, e.g. dancing with a patrol) —
+    // stop being clever: plow ahead and let invulnerability do its job
+    if (px > (player.bestX || 0) + 2) { player.bestX = px; player.stuckT = 0; }
+    else player.stuckT = (player.stuckT || 0) + 1;
+    if (!player.progAnchor) player.progAnchor = { x: px, t: tick };
+    if (tick - player.progAnchor.t > 600) {
+      if (px - player.progAnchor.x < 150) player.desperateUntil = tick + 150;
+      player.progAnchor = { x: px, t: tick };
+    }
+    const desperate = player.stuckT > 280 || tick < (player.desperateUntil || 0);
+    // truly wedged? periodic hop + airborne right-commit shakes loose
+    // nearly any geometry pin we haven't thought of
+    if (player.stuckT > 400 && (tick % 40) === 0) I.jump = true;
+
+    // situational awareness: anything dangerous within a jump's landing zone?
+    let danger = false;
+    if (player.starT <= 0) {
+      for (const en of level.enemies) {
+        if (!en.alive || en.rival) continue;
+        const dx = en.x - (px + player.w);
+        if (dx > -20 && dx < 200 && Math.abs(en.y - player.y) < 220) { danger = true; break; }
+      }
+    }
+
+    const retreatSafe = () => !inGap(px - 24);
+
+    // 1) pits: jump at full speed with room to spare — if we arrive slow,
+    // back up and take a running start rather than hop short into the hole
+    for (const g of level.gaps) {
+      if (px < g[1]) {
+        const d = g[0] - (px + player.w);
+        if (d >= -8) {
+          if (d < 26 + player.vx * 2 && player.vx > 3.2) I.jump = true;
+          else if (d < 20 && player.vx <= 3.2) {
+            if (retreatSafe()) { I.left = true; I.right = false; }
+            else if (d < 8) I.jump = true; // cornered — send it
+          }
+        }
+        break; // gaps are sorted; only the nearest matters
+      }
+    }
+    const committed = I.jump; // a pit jump overrides everything else
+
+    // 3) enemies (skipped when desperate: walking through a hit with
+    // 90 ticks of invulnerability beats dancing forever at a pit edge)
+    if (player.starT <= 0 && !committed && !desperate) {
+      for (const en of level.enemies) {
+        if (!en.alive || en.rival) continue;
+        const dx = en.x - (px + player.w);
+        if (dx < -20 || dx > 120) continue;
+        if (Math.abs(en.y - player.y) > 150) continue;
+
+        if (en.fly) {
+          // Swoopio: high-fliers can never reach our head — ignore them.
+          // Low-swoopers get stomped on the downswing; only wait when the
+          // bird is close and climbing (it crests within half a cycle).
+          if (en.baseY + 66 < player.y - 4) continue;
+          if (dx > 60) continue; // decide when we're actually close
+          const descending = Math.cos(en.t) > -0.2;
+          if (dx > 24 && descending && en.y > player.y - 60 && landingSafe()) {
+            I.jump = true;   // it's low & sinking, we have room to rise over it
+          } else if (dx > -10) {
+            I.right = false;                           // brief hold: it'll crest
+            if (dx < 26 && retreatSafe()) I.left = true;
+          }
+        } else if (en.spiky || en.boss) {
+          // leap over — but if it's fleeing ahead of us, just keep running:
+          // we're faster, and we'll jump once we're right behind it
+          if (dx < 100) {
+            const fleeing = en.vx > 0 && dx >= 60;
+            if (!fleeing) {
+              if (landingSafe()) I.jump = true;
+              else { I.right = false; if (dx < 44 && retreatSafe()) I.left = true; }
+            }
+          }
+        } else {
+          // goombrian: stomp late
+          if (dx > 2 && dx < 46) {
+            if (landingSafe()) I.jump = true;
+            else { I.right = false; if (dx < 30 && retreatSafe()) I.left = true; }
+          }
+        }
+      }
+
+      // watch your back: hop anything creeping up from behind while we
+      // wait — but never hop into a pit; outrunning it forward is fine too
+      for (const en of level.enemies) {
+        if (!en.alive || en.rival || en.fly || en.boss) continue;
+        const gap = px - (en.x + en.w);
+        if (gap > -6 && gap < 40 && en.vx > 0 && Math.abs(en.y - player.y) < 40) {
+          if (landingSafe()) I.jump = true;
+          else { I.right = true; I.left = false; } // just scoot forward
+        }
+      }
+    }
+
+    // 5) chase dropped power-ups (never across a pit; give up if unreachable)
+    let chasing = null;
+    for (const it of level.items) {
+      if (it.dead || it.noChase) continue;
+      const dx = it.x - px;
+      if (dx < -8 && dx > -220 &&
+          !level.gaps.some((g) => g[0] > it.x && g[1] < px)) {
+        chasing = it;
+      }
+    }
+    if (chasing && !committed) {
+      player.chaseT = (player.chaseT || 0) + 1;
+      if (player.chaseT > 240) { chasing.noChase = true; player.chaseT = 0; }
+      else { I.left = true; I.right = false; }
+    } else {
+      player.chaseT = 0;
+    }
+
+    // 2) walls (pipes AND ?-blocks) in the direction of travel mean hop
+    for (const s of allSolids()) {
+      if (player.y + player.h <= s.y + 4 || !player.onGround) continue;
+      const dR = s.x - (px + player.w);
+      const dL = px - (s.x + s.w);
+      if (I.right && dR > -6 && dR < 44) I.jump = true;
+      if (I.left && dL > -6 && dL < 30) I.jump = true;
+    }
+
+    // treasure hunting only when nothing is trying to kill us and we're
+    // making progress (a desperate Sorrio has no time for shiny things)
+    if (!danger && !desperate) {
+      // 4) ?-blocks: bonk when directly underneath
+      for (const q of level.qblocks) {
+        if (q.used) continue;
+        const cx = q.x + q.w / 2 - (px + player.w / 2);
+        if (Math.abs(cx) < 13 && player.y > q.y + q.h && player.y - (q.y + q.h) < 76 &&
+            player.onGround && landingSafe()) I.jump = true;
+      }
+
+      // 6) coin temptation — hop for coins floating just above
+      for (const c of level.coins) {
+        if (c.taken) continue;
+        const dx = c.x - px, dy = player.y - c.y;
+        if (dx > 5 && dx < 58 && dy > 28 && dy < 95 && player.onGround &&
+            (tick & 3) === 0 && landingSafe()) { I.jump = true; break; }
+      }
+
+      // 7) climb onto platforms just ahead and above (every so often)
+      for (const pf of level.platforms) {
+        const dx = pf.x - px;
+        if (dx > -10 && dx < 70 && player.y - pf.y > 10 && player.y - pf.y < 115 &&
+            player.onGround && ((tick >> 4) & 1) && landingSafe()) I.jump = true;
+      }
+    }
+
+    keys.ArrowRight = I.right;
+    keys.ArrowLeft = I.left;
+    keys[" "] = I.jump;
+  }
+
+  // ================================================================ physics
+  function inGap(x) {
+    for (const g of level.gaps) if (x > g[0] && x < g[1]) return true;
+    return false;
+  }
+
+  function allSolids() {
+    return level.solids.concat(level.qblocks);
+  }
+
+  function land(prevVy) {
+    if (!player.onGround && prevVy > 5) {
+      dust(player.x + player.w / 2, player.y + player.h, 6);
+      player.squashT = 8;
+    }
+    player.onGround = true;
+    player.combo = 0;
+  }
+
+  function playerStep() {
+    let left = keys.ArrowLeft;
+    let right = keys.ArrowRight;
+    if (chaosIs("reverse")) { const t = left; left = right; right = t; } // 😈
+    const jumpKey = keys[" "] || keys.Space || keys.ArrowUp;
+    const gravScale = chaosIs("moon") ? 0.45 : chaosIs("heavy") ? 1.6 : 1;
+    const maxSpd = chaosIs("speed") ? MAX_SPEED * 1.6 : MAX_SPEED;
+
+    if (left)  { player.vx -= MOVE; player.face = -1; }
+    if (right) { player.vx += MOVE; player.face = 1; }
+    if (!left && !right) player.vx *= FRICTION;
+    player.vx = clamp(player.vx, -maxSpd, maxSpd);
+
+    // coyote time + jump buffering for a fair, snappy feel
+    if (player.onGround) player.coyote = 7; else player.coyote--;
+    if (jumpKey && !player.prevJump) player.jbuf = 7;
+    else player.jbuf = Math.max(0, player.jbuf - 1);
+    player.prevJump = jumpKey;
+
+    if (player.jbuf > 0) {
+      if (player.coyote > 0) {
+        // ground jump
+        player.vy = JUMP_V;
+        player.jbuf = 0; player.coyote = 0;
+        player.onGround = false;
+        metrics.style += 1;
+        Sound.sfx.jump();
+        dust(player.x + player.w / 2, player.y + player.h, 4);
+      } else if (player.airJumps > 0) {
+        // double jump: a mid-air somersault that unlocks the wings
+        player.airJumps--;
+        player.vy = JUMP_V * 0.9;
+        player.jbuf = 0;
+        player.spinT = 16;
+        metrics.style += 3;
+        Sound.sfx.doubleJump();
+        burst(player.x + player.w / 2, player.y + player.h, 8,
+              ["#fff", "#a0d8ff", "#ffd23f"], 2.5, 0.08, 20, 2);
+      }
+    }
+    // variable jump height (manual only — the AI taps once)
+    if (mode === "manual" && !jumpKey && player.vy < -2) player.vy *= 0.86;
+
+    // FLIGHT: once the double jump is spent, holding jump beats his wings.
+    // Lift only ever ADDS — it never claws back the somersault's launch speed.
+    player.flying = false;
+    if (!player.onGround && player.airJumps === 0 && jumpKey && player.flyFuel > 0) {
+      if (player.vy > -4.2) {
+        player.vy = Math.max(-4.2, player.vy - (GRAVITY * gravScale + 0.55));
+      }
+      player.flyFuel--;
+      player.flying = true;
+      if ((tick & 3) === 0) {
+        particles.push({
+          x: player.x + (player.face > 0 ? 0 : player.w), y: player.y + 20,
+          vx: -player.face * (1 + Math.random()), vy: 0.5 + Math.random(),
+          life: 16, maxLife: 16, size: 2, grav: 0.02, color: "#e8f4ff",
+        });
+      }
+      if ((tick % 9) === 0) Sound.sfx.flap();
+    }
+
+    // --- horizontal move + solid resolution ---
+    player.x += player.vx;
+    for (const s of allSolids()) {
+      if (!rectsOverlap(player, s)) continue;
+      if (player.vx > 0) player.x = s.x - player.w;
+      else if (player.vx < 0) player.x = s.x + s.w;
+      player.vx = 0;
+    }
+
+    // --- vertical move + resolution ---
+    player.vy += GRAVITY * gravScale;
+    const prevVy = player.vy;
+    player.y += player.vy;
+    const wasGround = player.onGround;
+    player.onGround = false;
+
+    // 😈 troll blocks: pop into existence right where your head is going
+    if (psycho && player.vy < 0) {
+      for (const t of level.trolls) {
+        if (t.revealed) continue;
+        if (player.x + player.w > t.x && player.x < t.x + t.w &&
+            player.y > t.y && player.y - (t.y + t.h) < 44) {
+          t.revealed = true;
+          level.qblocks.push({ x: t.x, y: t.y, w: t.w, h: t.h, used: true, bounceT: 8 });
+          popup(t.x + t.w / 2, t.y - 8, "😈 SURPRISE!", "#e040fb", 14);
+          addShake(3, 6);
+          Sound.sfx.bonk();
+        }
+      }
+    }
+
+    for (const s of allSolids()) {
+      if (!rectsOverlap(player, s)) continue;
+      if (player.vy > 0 && player.y + player.h - player.vy <= s.y + 2) {
+        // landed on top
+        player.y = s.y - player.h; player.vy = 0;
+        if (!wasGround) land(prevVy); else player.onGround = true;
+      } else if (player.vy < 0 && player.y - player.vy >= s.y + s.h - 2) {
+        // hit it squarely from below
+        player.y = s.y + s.h; player.vy = 0.5;
+        if (s.contains !== undefined) bonk(s);
+        else Sound.sfx.bonk();
+      } else {
+        // grazed the side while rising/falling — eject sideways, not down
+        if (player.x + player.w / 2 < s.x + s.w / 2) player.x = s.x - player.w;
+        else player.x = s.x + s.w;
+        player.vx = 0;
+      }
+    }
+
+    // one-way platforms
+    for (const pf of level.platforms) {
+      if (player.vy >= 0 &&
+          player.x + player.w > pf.x && player.x < pf.x + pf.w &&
+          player.y + player.h > pf.y && player.y + player.h < pf.y + pf.h + 18 &&
+          player.y + player.h - player.vy <= pf.y + 2) {
+        player.y = pf.y - player.h;
+        player.vy = 0;
+        if (!wasGround) land(prevVy); else player.onGround = true;
+      }
+    }
+
+    // ground (unless over a pit)
+    if (player.y + player.h >= GROUND_Y && !inGap(player.x + player.w / 2)) {
+      player.y = GROUND_Y - player.h;
+      player.vy = 0;
+      if (!wasGround) land(prevVy); else player.onGround = true;
+    }
+
+    // fell in a pit: lose a heart and climb out just before the gap
+    if (player.y > H + 60) {
+      hurt(true, "pit");
+      if (player.hp > 0) {
+        let gx = player.x;
+        for (const g of level.gaps) {
+          if (player.x + player.w / 2 > g[0] - 20 && player.x < g[1] + 20) { gx = g[0]; break; }
+        }
+        player.x = Math.max(20, gx - 70);
+        player.y = GROUND_Y - player.h;
+        player.vx = 0; player.vy = 0;
+        popup(player.x + player.w / 2, player.y - 14, "OOF!", "#ff8daa", 14);
+      }
+    }
+
+    // bounds
+    if (player.x < 0) { player.x = 0; player.vx = 0; }
+    if (player.x + player.w > level.length) player.x = level.length - player.w;
+    if (player.y < -50) { player.y = -50; if (player.vy < 0) player.vy = 0; } // sky ceiling
+
+    if (Math.abs(player.vx) > 0.4 && player.onGround) {
+      player.walkT += 0.3;
+      if ((tick & 7) === 0) dust(player.x + (player.face > 0 ? 0 : player.w), player.y + player.h, 1);
+    }
+
+    // wings recover on solid ground; the somersault re-arms
+    if (player.onGround) {
+      player.airJumps = 1;
+      player.flyFuel = Math.min(FLY_MAX, player.flyFuel + 5);
+    }
+    if (player.spinT > 0) player.spinT--;
+
+    // 😈 fake ground crumbles underfoot
+    if (psycho && player.onGround && player.y + player.h >= GROUND_Y - 1) {
+      const cx2 = player.x + player.w / 2;
+      for (const f of level.fakes) {
+        if (f.state === 0 && cx2 > f.x0 && cx2 < f.x1) {
+          f.state = 1; f.t = 12;
+          addShake(4, 8);
+          Sound.sfx.bonk();
+          popup(cx2, GROUND_Y - 16, "?!", "#e040fb", 13);
+        }
+      }
+    }
+
+    if (player.invuln > 0) player.invuln--;
+    if (player.squashT > 0) player.squashT--;
+    if (player.starT > 0) {
+      player.starT--;
+      if ((tick & 2) === 0) {
+        particles.push({
+          x: player.x + Math.random() * player.w, y: player.y + Math.random() * player.h,
+          vx: (Math.random() - 0.5) * 1.5, vy: -1 - Math.random(),
+          life: 20, maxLife: 20, size: 2, grav: 0,
+          color: `hsl(${(tick * 17) % 360} 95% 65%)`,
+        });
+      }
+    }
+  }
+
+  // ---- ?-block bonk ----
+  function bonk(q) {
+    if (q.used) { Sound.sfx.bonk(); return; }
+    q.used = true;
+    q.bounceT = 10;
+    addShake(2, 4);
+    const cx = q.x + q.w / 2, cy = q.y - 6;
+    if (q.contains === "coin") {
+      metrics.coins++;
+      level.totalCoins++;
+      metrics.style += 1;
+      popup(cx, cy - 8, "+50");
+      burst(cx, cy, 8, ["#ffd23f", "#fff2b0"], 2.5, 0.12, 22, 2);
+      Sound.sfx.coin();
+    } else {
+      level.items.push({
+        kind: q.contains, x: q.x + 2, y: q.y - 26, w: 24, h: 24,
+        vx: 1.3, vy: -2.5, dead: false, life: 700,
+      });
+      Sound.sfx.sprout();
+    }
+  }
+
+  // ---- power-up items ----
+  function updateItems() {
+    for (const it of level.items) {
+      if (it.dead) continue;
+      if (--it.life <= 0) { it.dead = true; continue; } // wanders off eventually
+      it.vy += GRAVITY * 0.7;
+      it.x += it.vx;
+      it.y += it.vy;
+      for (const s of level.solids) {
+        if (!rectsOverlap(it, s)) continue;
+        if (it.vy > 0 && it.y + it.h - it.vy <= s.y + 6) {
+          // landed on a pipe lid
+          it.y = s.y - it.h;
+          it.vy = it.kind === "starrio" ? -6.5 : 0;
+        } else {
+          // fully eject on the side it came from so it can never get trapped
+          if (it.x + it.w / 2 < s.x + s.w / 2) {
+            it.x = s.x - it.w - 1;
+            it.vx = -Math.abs(it.vx);
+          } else {
+            it.x = s.x + s.w + 1;
+            it.vx = Math.abs(it.vx);
+          }
+        }
+      }
+      if (it.y + it.h >= GROUND_Y && !inGap(it.x + it.w / 2)) {
+        it.y = GROUND_Y - it.h;
+        it.vy = it.kind === "starrio" ? -6.5 : 0;
+      }
+      if (it.y > H + 80) { it.dead = true; continue; }
+      if (rectsOverlap(player, it) && !player.dead) {
+        it.dead = true;
+        applyItem(it);
+      }
+    }
+  }
+
+  function applyItem(it) {
+    const cx = player.x + player.w / 2, cy = player.y - 6;
+    if (it.kind === "shroomio") {
+      player.hp = Math.min(5, player.hp + 1);
+      metrics.style += 5;
+      popup(cx, cy, "+1 ♥  SHROOMIO!", "#ff8daa", 14);
+      burst(cx, cy, 14, ["#ff4d6d", "#ff8daa", "#fff"], 3, 0.1, 28, 3);
+      Sound.sfx.power();
+    } else {
+      player.starT = STAR_TIME;
+      metrics.style += 10;
+      popup(cx, cy, "★ STARRIO! ★", "#fff", 16);
+      burst(cx, cy, 20, ["#ffd23f", "#fff", "#a0d8ff"], 4, 0.06, 34, 3);
+      Sound.sfx.star();
+    }
+  }
+
+  // ---- enemies ----
+  function updateEnemies() {
+    for (const en of level.enemies) {
+      if (!en.alive) { en.squashT++; continue; }
+
+      if (en.rival) {
+        // Florrio jogs rightward, staying near Sorrio
+        const lead = player.x + 60 - en.x;
+        en.vx = clamp(lead * 0.01 + 1.0, -2, 2.4);
+        en.x += en.vx;
+        en.y = GROUND_Y - en.h;
+        // ...and pretends not to care, but tosses a heart when Sorrio's hurting
+        en.assistCd = (en.assistCd || 0) - 1;
+        if (player.hp <= 2 && en.assistCd <= 0 && !player.dead && !won &&
+            Math.abs(en.x - player.x) < 260) {
+          en.assistCd = 700;
+          // a perfect lob: drops straight into Sorrio's path just ahead
+          let ax = player.x + 90;
+          if (inGap(ax + 12)) ax = player.x + 6;
+          level.items.push({
+            kind: "shroomio", x: ax, y: player.y - 130, w: 24, h: 24,
+            vx: 0, vy: 1, dead: false, life: 700,
+          });
+          popup(en.x + 12, en.y - 18, "FLORRIO: take it!", "#2fbf4f", 12);
+          Sound.sfx.sprout();
+        }
+        continue;
+      }
+
+      if (en.boss) {
+        // Lord Snortio paces and bobs, guarding the loins
+        en.t += 0.05;
+        en.x = en.baseX + Math.sin(en.t) * 40;
+        en.y = GROUND_Y - en.h - Math.abs(Math.sin(en.t * 2)) * 10;
+        if (en.hurtT > 0) en.hurtT--;
+        if (en.hitCd > 0) en.hitCd--;
+        handleEnemyContact(en);
+        continue;
+      }
+
+      if (en.fly) {
+        // Swoopio: sine-wave flight
+        en.t += 0.06;
+        en.x += en.vx;
+        en.y = en.baseY + Math.sin(en.t) * 44;
+        if (en.x < en.baseX - 160 || en.x > en.baseX + 160) en.vx *= -1;
+        handleEnemyContact(en);
+        continue;
+      }
+
+      if (en.fallingIn) {
+        // dropped from the sky (😈 rain / mimic coins): fall until landing
+        en.vy = (en.vy || 0) + GRAVITY;
+        en.y += en.vy;
+        if (en.y + en.h >= GROUND_Y && !inGap(en.x + en.w / 2)) {
+          en.y = GROUND_Y - en.h;
+          en.fallingIn = false;
+          dust(en.x + en.w / 2, en.y + en.h, 4);
+        }
+        if (en.y > H + 80) en.alive = false;
+        handleEnemyContact(en);
+        continue;
+      }
+
+      // patrol walkers
+      en.x += en.vx;
+      if (en.x < en.baseX - en.range) en.vx = Math.abs(en.vx);
+      if (en.x > en.baseX + en.range) en.vx = -Math.abs(en.vx);
+      if (inGap(en.x + en.w / 2)) { en.vx *= -1; en.x += en.vx * 2; }
+      for (const s of level.solids) {
+        if (rectsOverlap(en, s)) { en.vx *= -1; en.x += en.vx * 2; }
+      }
+
+      handleEnemyContact(en);
+    }
+  }
+
+  function killEnemy(en, viaStar) {
+    en.alive = false;
+    metrics.stomps++;
+    burst(en.x + en.w / 2, en.y + en.h / 2, 10,
+          viaStar ? ["#ffd23f", "#fff", "#a0d8ff"] : ["#e8d9c0", "#a0522d", "#fff"],
+          3, 0.12, 24, 3);
+  }
+
+  function bossHit(en) {
+    en.hp--;
+    en.hurtT = 24;
+    en.t += 1.5;
+    metrics.stomps++;
+    metrics.style += 10;
+    addShake(7, 10);
+    freezeT = 5;
+    Sound.sfx.bossHit();
+    popup(en.x + en.w / 2, en.y - 24, en.hp > 0 ? "BONK!" : "SNORTIO DOWN!", "#ff7b54", 15);
+    if (en.hp <= 0) {
+      en.alive = false;
+      metrics.style += 40;
+      burst(en.x + en.w / 2, en.y + en.h / 2, 34, ["#ffd23f", "#ff7b54", "#fff"], 5, 0.08, 44, 4);
+      spawnLoot(en);
+      Sound.sfx.power();
+    }
+  }
+
+  function handleEnemyContact(en) {
+    if (!en.alive || player.dead || won) return;
+    if (!rectsOverlap(player, en)) return;
+
+    // Starrio power: plow straight through
+    if (player.starT > 0) {
+      if (en.boss) {
+        if (en.hitCd <= 0) { bossHit(en); en.hitCd = 40; }
+      } else {
+        killEnemy(en, true);
+        metrics.style += 3;
+        popup(en.x + en.w / 2, en.y - 10, "ZAP!", "#a0d8ff");
+        Sound.sfx.kill();
+      }
+      return;
+    }
+
+    const stomping = player.vy > 0 &&
+      ((player.y + player.h - player.vy) <= en.y + 10 ||
+       (en.fly && player.y + player.h / 2 < en.y + en.h / 2) ||
+       (en.boss && player.y + player.h < en.y + en.h * 0.6));
+
+    if (stomping && !en.spiky) {
+      player.vy = JUMP_V * 0.72;
+      player.combo++;
+      metrics.style += 3 * player.combo;
+      addShake(3, 5);
+      Sound.sfx.stomp();
+      if (player.combo >= 2) {
+        popup(player.x + player.w / 2, player.y - 12, "COMBO x" + player.combo, "#ff7b54", 15);
+      }
+      if (en.boss) bossHit(en);
+      else killEnemy(en, false);
+    } else if (player.invuln <= 0) {
+      hurt(false, en.kind);
+    }
+  }
+
+  function spawnLoot(en) {
+    for (let i = 0; i < 8; i++) {
+      level.coins.push({ x: en.x + i * 16 - 60, y: en.y - 30, taken: false, t: i });
+      level.totalCoins++;
+    }
+  }
+
+  function hurt(pierce, cause) {
+    // pierce: ignores invulnerability (pits) but is still just -1 heart
+    if (!pierce && (player.invuln > 0 || player.starT > 0)) return;
+    hurtLog.push({ t: tick, x: player.x | 0, cause: cause || "?" });
+    player.hp -= 1;
+    player.invuln = 90;
+    metrics.style = Math.max(0, metrics.style - 5);
+    addShake(6, 10);
+    burst(player.x + player.w / 2, player.y + player.h / 2, 10, ["#ff4d6d", "#fff"], 3, 0.12, 24, 3);
+    if (player.hp <= 0) {
+      player.dead = true;
+      player.deathT = 0;
+      player.vy = -9;
+      Sound.sfx.over();
+    } else {
+      player.vy = -7;
+      player.vx = -player.face * 2.2; // mostly vertical: don't fling him into pits
+      Sound.sfx.hurt();
+    }
+  }
+
+  function updateCoins() {
+    for (const c of level.coins) {
+      if (c.taken) continue;
+      c.t += 0.15;
+      const cb = { x: c.x - 8, y: c.y - 8, w: 16, h: 16 };
+      if (rectsOverlap(player, cb)) {
+        c.taken = true;
+        if (c.mimic) {
+          // 😈 that coin was a lie
+          popup(c.x, c.y - 14, "GOTCHA! 😈", "#e040fb", 15);
+          burst(c.x, c.y, 12, ["#e040fb", "#7b1fa2", "#000"], 3, 0.12, 24, 3);
+          spawnFallingGoombrian(c.x);
+          addShake(3, 6);
+          Sound.sfx.laugh();
+        } else {
+          metrics.coins++;
+          metrics.style += 1;
+          burst(c.x, c.y, 5, ["#ffd23f", "#fff2b0"], 2, 0.1, 16, 2);
+          Sound.sfx.coin();
+        }
+      }
+    }
+  }
+
+  function updateQBlocks() {
+    for (const q of level.qblocks) if (q.bounceT > 0) q.bounceT--;
+  }
+
+  function computeScore() {
+    metrics.score =
+      metrics.coins * 50 +
+      metrics.stomps * 75 +
+      metrics.dist * 2 +
+      metrics.style * 5;
+  }
+
+  function saveBest() {
+    if (bestSaved) return;
+    bestSaved = true;
+    if (metrics.score > best) {
+      best = metrics.score;
+      try { localStorage.setItem("sorrio-best", String(best)); } catch (e) {}
+    }
+  }
+
+  function camera() {
+    const target = player.x - W * 0.38 + player.vx * 8;
+    camX += (target - camX) * 0.12;
+    camX = clamp(camX, 0, level.length - W);
+  }
+
+  // ============================================================ 😈 chaos
+  const chaosIs = (type) => chaos && chaos.type === type && tick < chaos.until;
+
+  function addGap(a, b) {
+    let i = 0;
+    while (i < level.gaps.length && level.gaps[i][0] < a) i++;
+    level.gaps.splice(i, 0, [a, b]); // keep gaps sorted: the AI relies on it
+  }
+
+  function spawnFallingGoombrian(x) {
+    level.enemies.push({
+      x: x - 13, y: -40, w: 26, h: 28,
+      vx: -(0.6 + Math.random() * 0.7), kind: "goombrian",
+      alive: true, squashT: 0, spiky: false,
+      baseX: x, range: 80, fallingIn: true, vy: 0,
+    });
+  }
+
+  const CHAOS_EVENTS = [
+    { type: "reverse",   dur: 220, text: "😈 CONTROLS REVERSED" },
+    { type: "moon",      dur: 300, text: "😈 MOON GRAVITY" },
+    { type: "heavy",     dur: 240, text: "😈 HEAVY BONES" },
+    { type: "rain",      dur: 150, text: "😈 GOOMBRIAN RAIN" },
+    { type: "disco",     dur: 340, text: "😈 DISCO FEVER" },
+    { type: "mirror",    dur: 240, text: "😈 MIRROR WORLD" },
+    { type: "fakeclear", dur: 150, text: "" },
+    { type: "speed",     dur: 300, text: "😈 SPEED DEMON" },
+    { type: "ambush",    dur: 1,   text: "😈 PIPE AMBUSH" },
+  ];
+
+  function fireChaos() {
+    const ev = CHAOS_EVENTS[(Math.random() * CHAOS_EVENTS.length) | 0];
+    chaos = { type: ev.type, until: tick + ev.dur, spawnT: 0 };
+    chaosCount++;
+    if (ev.text) popup(player.x + player.w / 2, player.y - 46, ev.text, "#e040fb", 17);
+    if (ev.type === "fakeclear") Sound.sfx.win(); else Sound.sfx.psycho();
+    if (ev.type === "ambush") {
+      const pipe = level.solids.find((s) => s.x > player.x && s.x < player.x + 700);
+      if (pipe) {
+        level.enemies.push({
+          x: pipe.x + 13, y: pipe.y - 28, w: 26, h: 28,
+          vx: -0.8, kind: "sporella", alive: true, squashT: 0, spiky: true,
+          baseX: pipe.x + 13, range: 90,
+        });
+        popup(pipe.x + 26, pipe.y - 16, "😈", "#e040fb", 18);
+      } else {
+        chaos = { type: "rain", until: tick + 150, spawnT: 0 };
+      }
+    }
+  }
+
+  function updateChaos() {
+    if (!psycho || won || gameOver || player.dead) return;
+
+    // crumbling fake ground
+    for (const f of level.fakes) {
+      if (f.state === 1 && --f.t <= 0) {
+        f.state = 2;
+        addGap(f.x0, f.x1);
+        burst((f.x0 + f.x1) / 2, GROUND_Y + 10, 14, ["#c84c0c", "#8a4b14", "#58c04c"], 3, 0.2, 26, 3);
+        addShake(5, 8);
+        popup((f.x0 + f.x1) / 2, GROUND_Y - 24, "😈 BYE!", "#e040fb", 14);
+      }
+    }
+
+    // the fake flag flees when approached
+    const ff = level.fakeFlag;
+    if (ff && !ff.gone && player.x > ff.x - 150) {
+      if (!ff.taunted) {
+        ff.taunted = true;
+        popup(ff.x, GROUND_Y - 150, "😈 NOT TODAY!", "#e040fb", 16);
+        Sound.sfx.laugh();
+      }
+      ff.x += 7;
+      ff.fled += 7;
+      if (ff.fled > 560) ff.gone = true;
+    }
+
+    // the director
+    if (tick >= nextChaosAt) {
+      fireChaos();
+      nextChaosAt = tick + 300 + Math.random() * 380;
+    }
+    if (chaos && chaosIs("rain")) {
+      if (--chaos.spawnT <= 0 && (chaos.spawned || 0) < 7) {
+        chaos.spawnT = 18;
+        chaos.spawned = (chaos.spawned || 0) + 1;
+        spawnFallingGoombrian(camX + 180 + Math.random() * 400);
+      }
+    }
+    if (chaos && tick >= chaos.until) chaos = null;
+  }
+
+  // ---------------------------------------------------------------- update
+  function update() {
+    tick++;
+    updateParticles();
+
+    if (gameOver) {
+      if (won && tick % 14 === 0) firework();
+      computeScore();
+      saveBest();
+      return;
+    }
+
+    if (won) {
+      // victory lap: stroll to the castle under fireworks
+      winT++;
+      player.x += 2.2;
+      player.walkT += 0.35;
+      player.y = GROUND_Y - player.h;
+      player.onGround = true;
+      if (tick % 12 === 0) firework();
+      camera();
+      computeScore();
+      if (winT > 100) gameOver = true;
+      return;
+    }
+
+    if (player.dead) {
+      player.deathT++;
+      player.vy += GRAVITY * 0.8;
+      player.y += player.vy;
+      if (player.deathT > 55) gameOver = true;
+      computeScore();
+      return;
+    }
+
+    if (mode === "auto") autoPilot();
+    playerStep();
+    updateChaos();
+    updateEnemies();
+    updateItems();
+    updateCoins();
+    updateQBlocks();
+
+    // win condition: reach the flag
+    if (player.x + player.w >= level.flag.x) {
+      won = true;
+      winT = 0;
+      metrics.style += 25;
+      popup(player.x, player.y - 20, "STAGE CLEAR!", "#ffd23f", 18);
+      Sound.sfx.win();
+      firework(); firework();
+    }
+
+    metrics.dist = Math.max(metrics.dist, Math.floor(player.x / 10));
+    computeScore();
+    camera();
+  }
+
+  // ------------------------------------------------------------- rendering
+  const s2 = (x) => x - camX; // world -> screen
+
+  function skyColors() {
+    // day slides into golden hour as Sorrio crosses the level
+    const p = clamp(player.x / level.length, 0, 1);
+    return {
+      top: `hsl(${222 - p * 18} 85% ${64 - p * 26}%)`,
+      bottom: `hsl(${Math.round(205 - p * 160)} 90% ${78 - p * 8}%)`,
+      p,
+    };
+  }
+
+  function drawBackground() {
+    const sky = skyColors();
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, sky.top);
+    g.addColorStop(1, sky.bottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // sun sinks as the level progresses
+    const sunX = W - 90, sunY = 46 + sky.p * 140;
+    const rg = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 60);
+    rg.addColorStop(0, "rgba(255,240,180,0.9)");
+    rg.addColorStop(1, "rgba(255,240,180,0)");
+    ctx.fillStyle = rg;
+    ctx.fillRect(sunX - 60, sunY - 60, 120, 120);
+    ctx.fillStyle = "#fff3b8";
+    ctx.beginPath(); ctx.arc(sunX, sunY, 18, 0, 7); ctx.fill();
+
+    // far mountains
+    ctx.fillStyle = "rgba(140,170,225,0.75)";
+    for (const m of level.mountains) {
+      const x = m.x - camX * 0.12;
+      if (x < -m.w || x > W) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.lineTo(x + m.w / 2, GROUND_Y - m.w * 0.5);
+      ctx.lineTo(x + m.w, GROUND_Y);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(x + m.w * 0.42, GROUND_Y - m.w * 0.42);
+      ctx.lineTo(x + m.w / 2, GROUND_Y - m.w * 0.5);
+      ctx.lineTo(x + m.w * 0.58, GROUND_Y - m.w * 0.42);
+      ctx.fill();
+      ctx.fillStyle = "rgba(140,170,225,0.75)";
+    }
+
+    // hills
+    ctx.fillStyle = "#3fa34d";
+    for (const h of level.hills) {
+      const x = h.x - camX * 0.35;
+      if (x < -h.w || x > W) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.quadraticCurveTo(x + h.w / 2, GROUND_Y - h.w * 0.45, x + h.w, GROUND_Y);
+      ctx.fill();
+    }
+
+    // clouds drift slowly
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    for (const c of level.clouds) {
+      const x = ((c.x + tick * 0.08 * c.s) % (level.length + 200)) - camX * 0.25;
+      if (x < -90 || x > W + 90) continue;
+      cloud(x, c.y, c.s);
+    }
+  }
+
+  function cloud(x, y, s) {
+    ctx.beginPath();
+    ctx.arc(x, y, 14 * s, 0, 7);
+    ctx.arc(x + 16 * s, y + 4 * s, 18 * s, 0, 7);
+    ctx.arc(x + 36 * s, y, 14 * s, 0, 7);
+    ctx.fill();
+  }
+
+  function drawGround() {
+    for (let sx = 0; sx <= W; sx += 8) {
+      const wx = camX + sx;
+      if (inGap(wx)) continue;
+      ctx.fillStyle = "#c84c0c";
+      ctx.fillRect(sx, GROUND_Y, 8, H - GROUND_Y);
+    }
+    ctx.fillStyle = "#58c04c";
+    for (let sx = 0; sx <= W; sx += 8) {
+      const wx = camX + sx;
+      if (!inGap(wx)) ctx.fillRect(sx, GROUND_Y, 8, 6);
+    }
+    ctx.strokeStyle = "rgba(0,0,0,0.18)";
+    ctx.lineWidth = 1;
+    for (let sx = -(camX % 32); sx <= W; sx += 32) {
+      ctx.beginPath(); ctx.moveTo(sx, GROUND_Y + 6); ctx.lineTo(sx, H); ctx.stroke();
+    }
+
+    // 😈 crumbling fake ground shudders and cracks
+    for (const f of level.fakes) {
+      if (f.state !== 1) continue;
+      const x0 = s2(f.x0), x1 = s2(f.x1);
+      if (x1 < 0 || x0 > W) continue;
+      const j = (Math.random() - 0.5) * 3;
+      ctx.strokeStyle = "#3a1a05";
+      ctx.lineWidth = 2;
+      for (let cx = x0 + 4; cx < x1; cx += 9) {
+        ctx.beginPath();
+        ctx.moveTo(cx + j, GROUND_Y);
+        ctx.lineTo(cx - 3 + j, GROUND_Y + 14);
+        ctx.lineTo(cx + 3 + j, GROUND_Y + 26);
+        ctx.stroke();
+      }
+    }
+
+    // bushes sit on the grass line
+    for (const b of level.bushes) {
+      const x = s2(b.x);
+      if (x < -80 || x > W + 80) continue;
+      ctx.fillStyle = "#2e8b3d";
+      ctx.beginPath();
+      ctx.arc(x, GROUND_Y, 12 * b.s, Math.PI, 0);
+      ctx.arc(x + 14 * b.s, GROUND_Y, 16 * b.s, Math.PI, 0);
+      ctx.arc(x + 30 * b.s, GROUND_Y, 12 * b.s, Math.PI, 0);
+      ctx.fill();
+    }
+  }
+
+  function drawPipes() {
+    for (const s of level.solids) {
+      const x = s2(s.x);
+      if (x < -s.w || x > W) continue;
+      ctx.fillStyle = "#2ea44f";
+      ctx.fillRect(x + 4, s.y + 8, s.w - 8, s.h - 8);
+      ctx.fillStyle = "#45cf6b";
+      ctx.fillRect(x + 8, s.y + 10, 7, s.h - 12);
+      ctx.fillStyle = "#1d7a38";
+      ctx.fillRect(x + s.w - 15, s.y + 10, 7, s.h - 12);
+      ctx.fillStyle = "#2ea44f";
+      ctx.fillRect(x, s.y, s.w, 10);
+      ctx.strokeStyle = "#0b3d1d";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, s.y, s.w, 10);
+      ctx.strokeRect(x + 4, s.y + 10, s.w - 8, s.h - 10);
+    }
+  }
+
+  function drawQBlocks() {
+    for (const q of level.qblocks) {
+      const x = s2(q.x);
+      if (x < -q.w || x > W) continue;
+      const y = q.y - q.bounceT;
+      if (q.used) {
+        ctx.fillStyle = "#8a5a2b";
+        ctx.fillRect(x, y, q.w, q.h);
+        ctx.strokeStyle = "#5a3210";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, q.w - 2, q.h - 2);
+        continue;
+      }
+      ctx.fillStyle = "#c98a1b";
+      ctx.fillRect(x, y, q.w, q.h);
+      ctx.fillStyle = (Math.sin(tick * 0.12) > -0.3) ? "#ffd23f" : "#ffb020";
+      ctx.fillRect(x + 2, y + 2, q.w - 4, q.h - 4);
+      ctx.fillStyle = "#8a5a2b";
+      ctx.font = "bold 16px monospace";
+      ctx.fillText("?", x + 9, y + 20);
+      ctx.fillRect(x + 2, y + 2, 3, 3);
+      ctx.fillRect(x + q.w - 5, y + 2, 3, 3);
+      ctx.fillRect(x + 2, y + q.h - 5, 3, 3);
+      ctx.fillRect(x + q.w - 5, y + q.h - 5, 3, 3);
+    }
+  }
+
+  function drawPlatforms() {
+    for (const pf of level.platforms) {
+      const x = s2(pf.x);
+      if (x < -pf.w || x > W) continue;
+      ctx.fillStyle = "#b5651d";
+      ctx.fillRect(x, pf.y, pf.w, pf.h);
+      ctx.fillStyle = "#8a4b14";
+      ctx.fillRect(x, pf.y + pf.h - 5, pf.w, 5);
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 1;
+      for (let bx = 0; bx < pf.w; bx += 16) ctx.strokeRect(x + bx, pf.y, 16, pf.h);
+    }
+  }
+
+  function drawCoins() {
+    for (const c of level.coins) {
+      if (c.taken) continue;
+      const x = s2(c.x);
+      if (x < -20 || x > W + 20) continue;
+      const wobble = Math.abs(Math.cos(c.t)) * 6 + 2;
+      ctx.fillStyle = "#ffd23f";
+      ctx.strokeStyle = "#b8860b";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(x, c.y, wobble, 10, 0, 0, 7);
+      ctx.fill(); ctx.stroke();
+      if (wobble > 6) {
+        ctx.fillStyle = "#fff2b0";
+        ctx.fillRect(x - 2, c.y - 6, 2, 5);
+      }
+    }
+  }
+
+  function drawItems() {
+    for (const it of level.items) {
+      if (it.dead) continue;
+      if (it.life < 120 && (tick & 4)) continue; // blink before vanishing
+      const x = s2(it.x);
+      if (x < -30 || x > W + 30) continue;
+      if (it.kind === "shroomio") {
+        ctx.fillStyle = "#ffe9d6";
+        ctx.fillRect(x + 6, it.y + 12, 12, 12);
+        ctx.fillStyle = "#ff4d6d";
+        ctx.beginPath();
+        ctx.ellipse(x + 12, it.y + 12, 12, 10, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(x + 7, it.y + 8, 3, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(x + 17, it.y + 8, 3, 0, 7); ctx.fill();
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x + 9, it.y + 16, 2, 4);
+        ctx.fillRect(x + 14, it.y + 16, 2, 4);
+      } else {
+        // starrio: spinning 5-point star
+        const cx = x + 12, cy = it.y + 12;
+        const rot = tick * 0.12;
+        ctx.fillStyle = `hsl(${(tick * 11) % 360} 95% 60%)`;
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const r = i % 2 === 0 ? 12 : 5;
+          const a = rot + (i / 10) * Math.PI * 2 - Math.PI / 2;
+          const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#000";
+        ctx.fillRect(cx - 4, cy - 2, 2, 3);
+        ctx.fillRect(cx + 2, cy - 2, 2, 3);
+      }
+    }
+  }
+
+  function drawEnemies() {
+    for (const en of level.enemies) {
+      const x = s2(en.x);
+      if (x < -90 || x > W + 90) continue;
+
+      if (!en.alive) {
+        if (!en.boss && en.squashT < 24) {
+          ctx.fillStyle = en.spiky ? "#7b4fa3" : "#a0522d";
+          ctx.fillRect(x, en.y + en.h - 8, en.w, 8);
+        }
+        continue;
+      }
+
+      switch (en.kind) {
+        case "goombrian": drawGoombrian(x, en.y, en.w, en.h); break;
+        case "sporella":  drawSporella(x, en.y, en.w, en.h); break;
+        case "swoopio":   drawSwoopio(x, en.y, en.w, en.h, en.t); break;
+        case "florrio":
+          drawDude(x, en.y, en.w, en.h, {
+            cap: "#2fbf4f", face: en.vx >= 0 ? 1 : -1,
+            walkT: tick * 0.28, onGround: true, star: false,
+          });
+          break;
+        case "snortio":   drawSnortio(x, en.y, en.w, en.h, en); break;
+      }
+    }
+  }
+
+  function drawGoombrian(x, y, w, h) {
+    ctx.fillStyle = "#a0522d";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h * 0.35, w / 2, h * 0.35, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(x, y + h * 0.35, w, h * 0.45);
+    const step = Math.sin(tick * 0.2) * 2;
+    ctx.fillStyle = "#5a2d0c";
+    ctx.fillRect(x + step, y + h - 6, 9, 6);
+    ctx.fillRect(x + w - 9 - step, y + h - 6, 9, 6);
+    const blink = (tick % 140) < 6;
+    ctx.fillStyle = "#fff";
+    if (!blink) {
+      ctx.fillRect(x + 5, y + h * 0.4, 6, 7);
+      ctx.fillRect(x + w - 11, y + h * 0.4, 6, 7);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(x + 7, y + h * 0.42, 3, 4);
+      ctx.fillRect(x + w - 9, y + h * 0.42, 3, 4);
+    } else {
+      ctx.fillRect(x + 5, y + h * 0.48, 6, 2);
+      ctx.fillRect(x + w - 11, y + h * 0.48, 6, 2);
+    }
+  }
+
+  function drawSporella(x, y, w, h) {
+    ctx.fillStyle = "#7b4fa3";
+    ctx.fillRect(x, y + 8, w, h - 8);
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + 10, w / 2, 10, 0, Math.PI, 0);
+    ctx.fill();
+    const glint = (tick % 60) < 8;
+    ctx.fillStyle = glint ? "#fff" : "#e0d0f0";
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + 2 + i * 7, y + 4);
+      ctx.lineTo(x + 5 + i * 7, y - 6);
+      ctx.lineTo(x + 8 + i * 7, y + 4);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x + 5, y + 14, 5, 6);
+    ctx.fillRect(x + w - 10, y + 14, 5, 6);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(x + 6, y + 16, 3, 3);
+    ctx.fillRect(x + w - 9, y + 16, 3, 3);
+  }
+
+  function drawSwoopio(x, y, w, h, t) {
+    const flap = Math.sin(t * 4) * 9;
+    ctx.fillStyle = "#4657c7";
+    ctx.beginPath();
+    ctx.moveTo(x + 5, y + 9);
+    ctx.lineTo(x - 9, y + flap);
+    ctx.lineTo(x + 9, y + 15);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + w - 5, y + 9);
+    ctx.lineTo(x + w + 9, y + flap);
+    ctx.lineTo(x + w - 9, y + 15);
+    ctx.fill();
+    ctx.fillStyle = "#5a6ee0";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x + 6, y + 5, 5, 6);
+    ctx.fillRect(x + w - 11, y + 5, 5, 6);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(x + 8, y + 7, 2, 3);
+    ctx.fillRect(x + w - 9, y + 7, 2, 3);
+    ctx.fillStyle = "#ffb020";
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2 - 3, y + 12);
+    ctx.lineTo(x + w / 2, y + 18);
+    ctx.lineTo(x + w / 2 + 3, y + 12);
+    ctx.fill();
+  }
+
+  function drawSnortio(x, y, w, h, en) {
+    const flash = en.hurtT > 0 && (tick & 3) < 2;
+    ctx.fillStyle = flash ? "#d55" : "#8b1a1a";
+    ctx.fillRect(x, y + 10, w, h - 10);
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + 12, w / 2, 14, 0, Math.PI, 0);
+    ctx.fill();
+    // horns
+    ctx.fillStyle = "#f4e1c1";
+    ctx.beginPath(); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x - 2, y - 8); ctx.lineTo(x + 14, y + 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + w - 6, y + 6); ctx.lineTo(x + w + 2, y - 8); ctx.lineTo(x + w - 14, y + 2); ctx.fill();
+    // crown (he IS a lord)
+    ctx.fillStyle = "#ffd23f";
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y - 2);
+    ctx.lineTo(x + 19, y - 12); ctx.lineTo(x + 23, y - 4);
+    ctx.lineTo(x + 26, y - 14); ctx.lineTo(x + 29, y - 4);
+    ctx.lineTo(x + 33, y - 12); ctx.lineTo(x + 36, y - 2);
+    ctx.fill();
+    // snout
+    ctx.fillStyle = "#c0392b";
+    ctx.fillRect(x + w / 2 - 8, y + 26, 16, 12);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(x + w / 2 - 5, y + 30, 3, 4);
+    ctx.fillRect(x + w / 2 + 2, y + 30, 3, 4);
+    // eyes
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillRect(x + 10, y + 16, 8, 6);
+    ctx.fillRect(x + w - 18, y + 16, 8, 6);
+    // health pips
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < en.hp ? "#ff4d6d" : "#3a1414";
+      ctx.fillRect(x + i * 14 + 4, y - 24, 11, 7);
+    }
+  }
+
+  // Sorrio & Florrio share a chunky little-plumber body.
+  // Draws relative to the CURRENT transform, so callers can rotate/squash.
+  function drawDude(x, y, w, h, o) {
+    let sx = 1, sy = 1;
+    if (o.squashT > 0) { const k = o.squashT / 8; sy = 1 - 0.2 * k; sx = 1 + 0.2 * k; }
+    else if (!o.onGround && o.vy < -3) { sy = 1.1; sx = 0.92; }
+
+    ctx.save();
+    ctx.translate(x + w / 2, y + h);
+    ctx.scale(sx, sy);
+    ctx.translate(-w / 2, -h);
+
+    const step = Math.sin(o.walkT || 0) * 3;
+    const air = !o.onGround;
+    let capC = o.cap;
+    if (o.star && ((tick >> 2) & 1)) capC = `hsl(${(tick * 13) % 360} 90% 55%)`;
+
+    // legs + shoes
+    ctx.fillStyle = "#1f3a93";
+    if (air) {
+      ctx.fillRect(4, h - 9, 7, 7);
+      ctx.fillRect(w - 11, h - 11, 7, 7);
+    } else {
+      ctx.fillRect(4, h - 10 + Math.max(0, step), 7, 10 - Math.max(0, step));
+      ctx.fillRect(w - 11, h - 10 - Math.min(0, step), 7, 10 + Math.min(0, step));
+      ctx.fillStyle = "#5a3210";
+      ctx.fillRect(2, h - 4, 9, 4);
+      ctx.fillRect(w - 11, h - 4, 9, 4);
+    }
+    // shirt + overalls
+    ctx.fillStyle = capC;
+    ctx.fillRect(3, 15, w - 6, 9);
+    ctx.fillStyle = "#1f3a93";
+    ctx.fillRect(5, 19, w - 10, 9);
+    ctx.fillRect(6, 15, 3, 5);
+    ctx.fillRect(w - 9, 15, 3, 5);
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillRect(7, 20, 2, 2);
+    ctx.fillRect(w - 9, 20, 2, 2);
+    // arm
+    ctx.fillStyle = capC;
+    const armY = air ? 13 : 17 + Math.sin((o.walkT || 0) + Math.PI) * 2;
+    ctx.fillRect(o.face > 0 ? w - 4 : 0, armY, 4, 8);
+    // head + face
+    ctx.fillStyle = "#ffcc99";
+    ctx.fillRect(4, 4, w - 8, 12);
+    ctx.fillRect(o.face > 0 ? w - 4 : 0, 9, 4, 5); // nose
+    ctx.fillStyle = "#5a3210";
+    ctx.fillRect(o.face > 0 ? 3 : w - 7, 8, 4, 7);  // hair
+    ctx.fillRect(o.face > 0 ? w - 12 : 4, 13, 8, 3); // moustache
+    ctx.fillStyle = "#000";
+    ctx.fillRect(o.face > 0 ? w - 10 : 7, 8, 3, 4);  // eye
+    // cap
+    ctx.fillStyle = capC;
+    ctx.fillRect(3, 0, w - 6, 6);
+    ctx.fillRect(o.face > 0 ? w - 9 : 1, 4, 8, 3);   // brim
+
+    ctx.restore();
+  }
+
+  function drawPlayer() {
+    if (player.invuln > 0 && !player.dead && Math.floor(tick / 4) % 2 === 0) return;
+    const px = s2(player.x);
+
+    if (player.starT > 0) {
+      ctx.fillStyle = `hsla(${(tick * 9) % 360} 95% 70% / 0.25)`;
+      ctx.beginPath();
+      ctx.arc(px + player.w / 2, player.y + player.h / 2, 26, 0, 7);
+      ctx.fill();
+    }
+
+    const o = {
+      cap: "#e52521", face: player.face, walkT: player.walkT,
+      onGround: player.onGround, vy: player.vy,
+      squashT: player.squashT, star: player.starT > 0,
+    };
+
+    if (player.dead) {
+      ctx.save();
+      ctx.translate(px + player.w / 2, player.y + player.h / 2);
+      ctx.rotate(player.deathT * 0.18);
+      drawDude(-player.w / 2, -player.h / 2, player.w, player.h,
+               { ...o, onGround: false, vy: 0, squashT: 0 });
+      ctx.restore();
+      return;
+    }
+
+    // wings appear once the double jump is spent, until he lands
+    if (!player.onGround && player.airJumps === 0) {
+      const flap = player.flying ? Math.sin(tick * 0.9) * 10 : 4;
+      const bx = player.face > 0 ? px + 2 : px + player.w - 2;
+      ctx.fillStyle = "rgba(240,248,255,0.92)";
+      ctx.beginPath();
+      ctx.moveTo(bx, player.y + 14);
+      ctx.lineTo(bx - player.face * 17, player.y + 2 - flap);
+      ctx.lineTo(bx - player.face * 9, player.y + 20);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(bx, player.y + 17);
+      ctx.lineTo(bx - player.face * 21, player.y + 13 - flap * 0.6);
+      ctx.lineTo(bx - player.face * 11, player.y + 25);
+      ctx.fill();
+    }
+
+    // double-jump somersault
+    if (player.spinT > 0) {
+      ctx.save();
+      ctx.translate(px + player.w / 2, player.y + player.h / 2);
+      ctx.rotate(((16 - player.spinT) / 16) * Math.PI * 2 * player.face);
+      drawDude(-player.w / 2, -player.h / 2, player.w, player.h,
+               { ...o, onGround: false, squashT: 0 });
+      ctx.restore();
+      return;
+    }
+
+    drawDude(px, player.y, player.w, player.h, o);
+  }
+
+  function drawFlag() {
+    const x = s2(level.flag.x);
+    if (x >= -40 && x <= W + 40) {
+      ctx.fillStyle = "#444";
+      ctx.fillRect(x, GROUND_Y - 140, 5, 140);
+      ctx.fillStyle = "#ddd";
+      ctx.beginPath(); ctx.arc(x + 2, GROUND_Y - 142, 5, 0, 7); ctx.fill();
+      const wave = Math.sin(tick * 0.1) * 4;
+      ctx.fillStyle = won ? "#ffd23f" : "#2fbf4f";
+      ctx.beginPath();
+      ctx.moveTo(x + 5, GROUND_Y - 138);
+      ctx.lineTo(x + 40 + wave, GROUND_Y - 126);
+      ctx.lineTo(x + 5, GROUND_Y - 114);
+      ctx.fill();
+    }
+
+    // 😈 the fake flag: indistinguishable until it runs away from you
+    const ff = level.fakeFlag;
+    if (ff && !ff.gone) {
+      const fx = s2(ff.x);
+      if (fx > -50 && fx < W + 50) {
+        const lean = ff.fled > 0 ? 0.25 : 0;
+        ctx.save();
+        ctx.translate(fx, GROUND_Y);
+        ctx.rotate(lean);
+        ctx.fillStyle = "#444";
+        ctx.fillRect(0, -140, 5, 140);
+        ctx.fillStyle = "#ddd";
+        ctx.beginPath(); ctx.arc(2, -142, 5, 0, 7); ctx.fill();
+        const wob = Math.sin(tick * (ff.fled > 0 ? 0.5 : 0.1)) * 4;
+        ctx.fillStyle = "#2fbf4f";
+        ctx.beginPath();
+        ctx.moveTo(5, -138);
+        ctx.lineTo(40 + wob, -126);
+        ctx.lineTo(5, -114);
+        ctx.fill();
+        if (ff.fled > 0) {
+          // little legs. flags shouldn't have legs.
+          ctx.fillStyle = "#444";
+          const step = Math.sin(tick * 0.6) * 5;
+          ctx.fillRect(-2 + step, -4, 4, 6);
+          ctx.fillRect(3 - step, -4, 4, 6);
+        }
+        ctx.restore();
+      }
+    }
+    drawCastle();
+  }
+
+  function drawCastle() {
+    const x = s2(level.castle.x);
+    if (x < -220 || x > W + 220) return;
+    ctx.fillStyle = "#cbb7a0";
+    ctx.fillRect(x, GROUND_Y - 96, 110, 96);
+    ctx.fillRect(x + 25, GROUND_Y - 130, 60, 36);
+    for (let i = 0; i < 5; i++) ctx.fillRect(x + i * 22 + 2, GROUND_Y - 108, 14, 12);
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + 27 + i * 22, GROUND_Y - 142, 14, 12);
+    ctx.fillStyle = "#3a2a18";
+    ctx.beginPath(); ctx.arc(x + 55, GROUND_Y - 28, 16, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x + 39, GROUND_Y - 28, 32, 28);
+    ctx.fillRect(x + 12, GROUND_Y - 74, 10, 14);
+    ctx.fillRect(x + 88, GROUND_Y - 74, 10, 14);
+    ctx.strokeStyle = "rgba(0,0,0,0.14)";
+    ctx.lineWidth = 1;
+    for (let yy = GROUND_Y - 90; yy < GROUND_Y; yy += 12) {
+      ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x + 110, yy); ctx.stroke();
+    }
+    ctx.fillStyle = "#444";
+    ctx.fillRect(x + 53, GROUND_Y - 170, 3, 30);
+    ctx.fillStyle = "#e52521";
+    ctx.beginPath();
+    ctx.moveTo(x + 56, GROUND_Y - 170);
+    ctx.lineTo(x + 80, GROUND_Y - 162);
+    ctx.lineTo(x + 56, GROUND_Y - 154);
+    ctx.fill();
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const x = s2(p.x);
+      if (x < -10 || x > W + 10) continue;
+      ctx.globalAlpha = clamp(p.life / p.maxLife, 0, 1);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+    for (const p of popups) {
+      const x = s2(p.x);
+      ctx.globalAlpha = clamp(p.life / 30, 0, 1);
+      ctx.font = `bold ${p.size}px monospace`;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#000";
+      ctx.fillText(p.text, x + 1, p.y + 1);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, x, p.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "left";
+  }
+
+  function drawHud() {
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(8, 8, 176, 26);
+    ctx.fillStyle = "#ff4d6d";
+    ctx.font = "bold 14px monospace";
+    ctx.fillText("♥".repeat(Math.max(0, player.hp)) + "♡".repeat(Math.max(0, 5 - Math.max(0, player.hp))), 14, 27);
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillText("⬤" + metrics.coins, 108, 27);
+
+    if (player.combo >= 2) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ff7b54";
+      ctx.font = `bold ${14 + Math.min(8, player.combo * 2)}px monospace`;
+      ctx.fillText("COMBO x" + player.combo, W / 2, 30);
+      ctx.textAlign = "left";
+    }
+
+    if (player.starT > 0) {
+      const w = (player.starT / STAR_TIME) * 120;
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(W / 2 - 62, 38, 124, 10);
+      ctx.fillStyle = `hsl(${(tick * 9) % 360} 95% 60%)`;
+      ctx.fillRect(W / 2 - 60, 40, w, 6);
+    }
+
+    // wing fuel: shown whenever the wings are out or recovering
+    if (player.flyFuel < FLY_MAX || (!player.onGround && player.airJumps === 0)) {
+      const w = (player.flyFuel / FLY_MAX) * 120;
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(W / 2 - 64, 52, 128, 12);
+      ctx.fillStyle = player.flying ? "#fff" : "#a0d8ff";
+      ctx.fillRect(W / 2 - 60, 55, w, 6);
+      ctx.fillStyle = "#a0d8ff";
+      ctx.font = "9px monospace";
+      ctx.fillText("WINGS", W / 2 - 60, 51);
+    }
+
+    if (mode === "auto") {
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(W - 118, 8, 110, 20);
+      ctx.fillStyle = "#a0d8ff";
+      ctx.font = "11px monospace";
+      ctx.fillText("◉ AUTO-PILOT", W - 110, 22);
+    }
+
+    if (psycho) {
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(W - 118, mode === "auto" ? 32 : 8, 110, 20);
+      ctx.fillStyle = `hsl(${290 + Math.sin(tick * 0.15) * 20} 90% ${60 + Math.sin(tick * 0.3) * 12}%)`;
+      ctx.font = "bold 11px monospace";
+      ctx.fillText("😈 PSYCHO", W - 106, mode === "auto" ? 46 : 22);
+    }
+  }
+
+  function drawTouchUI() {
+    if (touchUI.joyId !== null) {
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(touchUI.joyOx, touchUI.joyOy, 34, 0, 7); ctx.stroke();
+      const kx = touchUI.joyOx + clamp(touchUI.joyDx, -30, 30);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath(); ctx.arc(kx, touchUI.joyOy, 16, 0, 7); ctx.fill();
+    }
+    if (touchUI.jumpId !== null) {
+      ctx.fillStyle = player.flying ? "rgba(160,216,255,0.5)" : "rgba(229,37,33,0.45)";
+      ctx.beginPath(); ctx.arc(touchUI.jumpX, touchUI.jumpY, 26, 0, 7); ctx.fill();
+    }
+  }
+
+  function drawFakeClear() {
+    if (!chaosIs("fakeclear")) return;
+    const remain = chaos.until - tick;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    if (remain > 60) {
+      ctx.fillStyle = "#ffd23f";
+      ctx.font = "bold 40px 'Trebuchet MS', sans-serif";
+      ctx.fillText("STAGE CLEAR!", W / 2, H / 2 - 10);
+    } else {
+      if (!chaos.laughed) { chaos.laughed = true; Sound.sfx.laugh(); addShake(5, 8); }
+      ctx.fillStyle = "#e040fb";
+      ctx.font = "bold 38px 'Trebuchet MS', sans-serif";
+      ctx.fillText("JUST KIDDING 😈", W / 2, H / 2 - 10);
+    }
+    ctx.textAlign = "left";
+  }
+
+  function drawBanner() {
+    if (!gameOver) return;
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = won ? "#ffd23f" : "#ff4d6d";
+    ctx.font = "bold 40px 'Trebuchet MS', sans-serif";
+    ctx.fillText(won ? "STAGE CLEAR!" : "OH NO, SORRIO!", W / 2, H / 2 - 24);
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px monospace";
+    ctx.fillText("Final score " + metrics.score + "  ·  Grade " + gradeFor(), W / 2, H / 2 + 10);
+    ctx.fillStyle = "#a0d8ff";
+    ctx.font = "13px monospace";
+    ctx.fillText("Best " + Math.max(best, metrics.score), W / 2, H / 2 + 32);
+    ctx.fillStyle = "#9aa0b5";
+    ctx.fillText("Tap the screen (or press R) to run it back", W / 2, H / 2 + 54);
+    ctx.textAlign = "left";
+  }
+
+  function render() {
+    // 😈 whole-screen chaos: disco hue spin, mirrored world
+    let filter = "";
+    if (chaosIs("disco")) filter = `hue-rotate(${(tick * 6) % 360}deg) saturate(1.7)`;
+    if (canvas.style.filter !== filter) canvas.style.filter = filter;
+    const flip = chaosIs("mirror") ? "scaleX(-1)" : "";
+    if (canvas.style.transform !== flip) canvas.style.transform = flip;
+
+    ctx.save();
+    if (shake.t > 0) {
+      shake.t--;
+      ctx.translate((Math.random() - 0.5) * shake.mag, (Math.random() - 0.5) * shake.mag);
+      shake.mag *= 0.9;
+    }
+    drawBackground();
+    drawGround();
+    drawPipes();
+    drawQBlocks();
+    drawPlatforms();
+    drawCoins();
+    drawItems();
+    drawFlag();
+    drawEnemies();
+    drawPlayer();
+    drawParticles();
+    ctx.restore();
+    drawHud();
+    drawTouchUI();
+    drawFakeClear();
+    drawBanner();
+  }
+
+  // ----------------------------------------------------------- bar graph UI
+  const bars = {
+    coins: { el: document.getElementById("b-coins"), val: document.getElementById("v-coins"), max: () => level.totalCoins },
+    dist:  { el: document.getElementById("b-dist"),  val: document.getElementById("v-dist"),  max: () => level.length / 10 },
+    stomp: { el: document.getElementById("b-stomp"), val: document.getElementById("v-stomp"), max: () => 24 },
+    hp:    { el: document.getElementById("b-hp"),    val: document.getElementById("v-hp"),    max: () => 5 },
+    style: { el: document.getElementById("b-style"), val: document.getElementById("v-style"), max: () => 200 },
+  };
+  const gradeEl = document.getElementById("grade");
+  const scoreEl = document.getElementById("score");
+
+  const pct = (v, m) => clamp((v / m) * 100, 0, 100);
+
+  function gradeFor() {
+    const s = metrics.score;
+    if (won && player.hp >= 4) return "S";
+    if (s >= 2000 || won) return "A";
+    if (s >= 1200) return "B";
+    if (s >= 650) return "C";
+    if (s >= 280) return "D";
+    return "F";
+  }
+
+  function updateBars() {
+    setBar("coins", metrics.coins, metrics.coins);
+    setBar("dist", metrics.dist, metrics.dist + "m");
+    setBar("stomp", metrics.stomps, metrics.stomps);
+    setBar("hp", Math.max(0, player.hp), Math.max(0, player.hp));
+    setBar("style", metrics.style, metrics.style);
+    const g = gradeFor();
+    gradeEl.textContent = g;
+    gradeEl.style.color = g === "S" ? "#a0d8ff" : g === "F" ? "#ff4d6d" : "#ffd23f";
+    scoreEl.textContent = "score " + metrics.score + " · best " + Math.max(best, bestSaved ? metrics.score : 0);
+  }
+
+  function setBar(key, v, label) {
+    const b = bars[key];
+    b.el.style.width = pct(v, b.max()) + "%";
+    b.val.textContent = label;
+  }
+
+  // ------------------------------------------------------------------ loop
+  function frame() {
+    if (!paused) {
+      if (freezeT > 0) freezeT--; // hit-stop: the world holds its breath
+      else update();
+    }
+    Sound.tickMusic(player.starT > 0 && !gameOver);
+    render();
+    updateBars();
+    requestAnimationFrame(frame);
+  }
+
+  // --------------------------------------------------------------- buttons
+  const modeBtn = document.getElementById("modeBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const muteBtn = document.getElementById("muteBtn");
+  const hint = document.getElementById("hint");
+
+  mode = "auto";
+  modeBtn.addEventListener("click", () => {
+    mode = mode === "auto" ? "manual" : "auto";
+    modeBtn.textContent = "Mode: " + (mode === "auto" ? "Auto-Pilot" : "Manual");
+    keys = {};
+    hint.innerHTML = mode === "auto"
+      ? 'Auto-Pilot: <b>Sorrio</b> runs, jumps, bonks ?-blocks and stomps on his own. Switch to Manual to drive with <b>←</b> <b>→</b> and <b>Space</b>.'
+      : 'Manual: <b>←</b> <b>→</b> move, <b>Space</b> jumps (hold for higher!). Stomp <b>Goombrian</b> &amp; <b>Swoopio</b>, dodge spiky <b>Sporella</b>, bonk ?-blocks from below, and hit <b>Lord Snortio</b> 3×.';
+  });
+  pauseBtn.addEventListener("click", () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? "Resume" : "Pause";
+  });
+  resetBtn.addEventListener("click", () => {
+    reset();
+    pauseBtn.textContent = "Pause";
+  });
+  muteBtn.addEventListener("click", () => {
+    Sound.unlock();
+    muteBtn.textContent = Sound.toggleMute() ? "🔇 Muted" : "🔊 Sound";
+  });
+  const psychoBtn = document.getElementById("psychoBtn");
+  psychoBtn.addEventListener("click", () => {
+    Sound.unlock();
+    psycho = !psycho;
+    psychoBtn.classList.toggle("on", psycho);
+    psychoBtn.textContent = psycho ? "😈 PSYCHO ON" : "😈 Psycho";
+    reset();
+    pauseBtn.textContent = "Pause";
+    if (psycho) {
+      Sound.sfx.psycho();
+      hint.innerHTML = "😈 <b>PSYCHO MODE</b>: the ground lies, coins bite, blocks appear out of thin air, the flag has legs, gravity has moods, and your controls may betray you. You were warned.";
+    }
+  });
+
+  // ------------------------------------------- touch: virtual joystick + jump
+  // Left half of the screen: a joystick appears wherever your thumb lands.
+  // Right half: tap = jump, tap again mid-air = double jump, hold = FLY.
+  function setManual() {
+    if (mode !== "manual") {
+      mode = "manual";
+      modeBtn.textContent = "Mode: Manual";
+      hint.innerHTML = 'Manual: <b>left thumb</b> drives the joystick, <b>right thumb</b> taps to jump / double-jump and <b>holds to fly</b> (watch the WINGS meter). Keyboard: <b>←</b> <b>→</b> <b>Space</b>.';
+    }
+  }
+
+  function toCanvas(t) {
+    const r = canvas.getBoundingClientRect();
+    const sx = r.width > 0 ? W / r.width : 1;
+    const sy = r.height > 0 ? H / r.height : 1;
+    return { x: (t.clientX - r.left) * sx, y: (t.clientY - r.top) * sy };
+  }
+
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    Sound.unlock();
+    if (gameOver) { reset(); return; }
+    setManual();
+    for (const t of Array.from(e.changedTouches)) {
+      const p = toCanvas(t);
+      if (p.x < W / 2) {
+        if (touchUI.joyId === null) {
+          touchUI.joyId = t.identifier;
+          touchUI.joyOx = p.x; touchUI.joyOy = p.y;
+          touchUI.joyDx = 0;
+        }
+      } else if (touchUI.jumpId === null) {
+        touchUI.jumpId = t.identifier;
+        touchUI.jumpX = p.x; touchUI.jumpY = p.y;
+        keys[" "] = true;
+      }
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.identifier === touchUI.joyId) {
+        touchUI.joyDx = toCanvas(t).x - touchUI.joyOx;
+        keys.ArrowRight = touchUI.joyDx > 8;
+        keys.ArrowLeft = touchUI.joyDx < -8;
+      }
+    }
+  }, { passive: false });
+
+  function onTouchEnd(e) {
+    e.preventDefault();
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.identifier === touchUI.joyId) {
+        touchUI.joyId = null;
+        touchUI.joyDx = 0;
+        keys.ArrowLeft = keys.ArrowRight = false;
+      }
+      if (t.identifier === touchUI.jumpId) {
+        touchUI.jumpId = null;
+        keys[" "] = false;
+      }
+    }
+  }
+  canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+  canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+  // debug/testing hook
+  window.__sorrio = () => ({
+    x: player.x, y: player.y, vx: player.vx, vy: player.vy, onGround: player.onGround,
+    hp: player.hp, coins: metrics.coins, score: metrics.score,
+    dist: metrics.dist, dead: player.dead, won, gameOver, hurtLog,
+    mode, psycho, chaosCount, chaosType: chaos ? chaos.type : null,
+    airJumps: player.airJumps, flyFuel: player.flyFuel, flying: player.flying,
+    keys: { left: !!keys.ArrowLeft, right: !!keys.ArrowRight, jump: !!keys[" "] },
+  });
+
+  // ------------------------------------------------------------------ boot
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
 </body>
 </html>
