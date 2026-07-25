@@ -276,9 +276,13 @@
       <label>Squad</label>
       <div class="seg" id="squadseg"></div>
     </div>
-    <div class="row">
+    <div class="row" id="diffrow">
       <label>Enemy AI</label>
       <div class="seg" id="diffseg"></div>
+    </div>
+    <div class="row">
+      <label>Mode</label>
+      <div class="seg" id="modeseg"></div>
     </div>
     <div class="row">
       <label>Detail</label>
@@ -1804,7 +1808,7 @@ WEAPONS.forEach((w, i) => { w.idx = i; WBYID[w.id] = w; });
 let ammo = [{}, {}];
 function resetAmmo() {
   ammo = [{}, {}];
-  for (const t of [0, 1]) for (const w of WEAPONS) ammo[t][w.id] = w.ammo;
+  for (const t of [0, 1]) for (const w of WEAPONS) ammo[t][w.id] = practice ? -1 : w.ammo;
 }
 function haveAmmo(team, w) { return ammo[team][w.id] !== 0; }
 function useAmmo(team, w, n) {
@@ -2993,6 +2997,7 @@ let playerTeam = TEAM_A;
 let turnTeam = TEAM_A;
 let turnClock = TURN_TIME;
 let round = 1;
+let practice = false;
 let turnState = 'menu';          // menu | play | settle | over
 let settleT = 0;
 let selected = null;
@@ -3263,7 +3268,7 @@ function stepCrates(dt) {
 /* ------------------------------------------------------------- turn engine */
 function beginTurn(team) {
   turnTeam = team;
-  turnClock = TURN_TIME;
+  turnClock = practice ? Infinity : TURN_TIME;
   turnState = 'play';
   rollWind();
   for (const u of units) {
@@ -3302,6 +3307,7 @@ function settled() {
 
 function nextTurn() {
   if (checkWin()) return;
+  if (practice) { beginTurn(playerTeam); return; }
   const nt = 1 - turnTeam;
   if (nt === playerTeam) {
     round++;
@@ -3319,6 +3325,7 @@ function nextTurn() {
 }
 
 function checkWin() {
+  if (practice) return false;
   const a = aliveOf(TEAM_A).length, b = aliveOf(TEAM_B).length;
   if (a > 0 && b > 0) return false;
   turnState = 'over';
@@ -3343,9 +3350,9 @@ function updateHUD() {
   elTurnWho.textContent = turnTeam === playerTeam ? 'YOUR SWARM' : TEAMNAME[turnTeam];
   elTurnWho.style.color = turnTeam === TEAM_A ? '#b6ff3b' : '#ff5fa8';
   const c = Math.max(0, Math.ceil(turnClock));
-  elClock.textContent = turnState === 'settle' ? '…' : (c + 's');
-  elClock.className = c <= 10 ? 'low' : '';
-  elRound.textContent = 'round ' + round + (slimeY > 0 ? ' ☣' : '');
+  elClock.textContent = turnState === 'settle' ? '…' : (practice ? '∞' : (c + 's'));
+  elClock.className = !practice && c <= 10 ? 'low' : '';
+  elRound.textContent = practice ? 'PRACTICE' : ('round ' + round + (slimeY > 0 ? ' ☣' : ''));
   const wm = Math.hypot(windX, windZ);
   const arrow = windX > 1 ? '→' : windX < -1 ? '←' : '·';
   elWindTxt.textContent = 'WIND ' + arrow + ' ' + wm.toFixed(1);
@@ -3631,7 +3638,7 @@ function buildAll() {
 function placeArmies(n) {
   units.length = 0;
   const cand = spawnCandidates();
-  if (cand.length < n * 2 + 4) return false;
+  if (cand.length < (practice ? n : n * 2) + 4) return false;
   cand.sort((a, b) => a.x - b.x);
   const cut = Math.floor(cand.length * 0.38);
   let left = cand.slice(0, cut);
@@ -3653,11 +3660,12 @@ function placeArmies(n) {
       names[(team * n + i) % names.length])));
   };
   take(left, TEAM_A);
-  take(right, TEAM_B);
+  if (!practice) take(right, TEAM_B);
   return true;
 }
 
 function startGame(seed) {
+  practice = practiceMode;
   seedText = seed;
   $('gameover').classList.add('hidden');
   shots.length = 0; parts.length = 0; debris.length = 0;
@@ -3705,13 +3713,17 @@ function seg(host, items, get, set) {
   });
 }
 
-let squadIdx = 1, diffIdx = 1, qualIdx = 1;
+let squadIdx = 1, diffIdx = 1, qualIdx = 1, practiceMode = false;
 const SQUADS = [3, 5, 8];
 
 function initMenu() {
   $('seedin').value = randomSeed();
   seg($('squadseg'), SQUADS.map(n => n + ' 🦗'), () => squadIdx, i => { squadIdx = i; squadSize = SQUADS[i]; });
   seg($('diffseg'), DIFFS.map(d => d.label), () => diffIdx, i => { diffIdx = i; diff = DIFFS[i]; });
+  seg($('modeseg'), ['Battle', 'Practice'], () => practiceMode ? 1 : 0, i => {
+    practiceMode = i === 1;
+    $('diffrow').style.display = practiceMode ? 'none' : '';
+  });
   seg($('qualseg'), QUALS.map(q => q.name), () => qualIdx, i => {
     qualIdx = i; Object.assign(Q, QUALS[i]); resize();
   });
