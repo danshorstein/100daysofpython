@@ -1,0 +1,3749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d1408">
+<title>GRASSHOPPERS — 3D voxel swarm artillery</title>
+<style>
+  :root {
+    --ink: #eaf7d8;
+    --dim: #93a880;
+    --panel: rgba(12, 22, 8, 0.82);
+    --edge: #2f4a1c;
+    --hot: #d7ff3f;
+    --team-a: #b6ff3b;
+    --team-b: #ff5fa8;
+    --danger: #ff5a3c;
+    --safe: calc(env(safe-area-inset-bottom, 0px));
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden;
+    background: #06090c;
+    color: var(--ink);
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  #glcanvas {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    display: block; touch-action: none;
+  }
+
+  /* ---------------------------------------------------------------- chrome */
+  #ui { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .card {
+    background: var(--panel);
+    border: 2px solid var(--edge);
+    border-radius: 10px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+  .btn {
+    pointer-events: auto;
+    background: var(--panel);
+    border: 2px solid var(--edge);
+    color: var(--ink);
+    border-radius: 10px;
+    font: inherit; font-weight: bold;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: transform .06s, background .12s, border-color .12s;
+  }
+  .btn:active { transform: scale(.94); background: #23400f; }
+  .btn.on { border-color: var(--hot); color: var(--hot); }
+  .btn:disabled { opacity: .35; }
+
+  /* top bar */
+  #topbar {
+    position: absolute; top: calc(env(safe-area-inset-top,0px) + 8px);
+    left: 8px; right: 8px;
+    display: flex; gap: 8px; align-items: flex-start; justify-content: space-between;
+  }
+  #turnbox { padding: 6px 10px; font-size: 13px; line-height: 1.35; min-width: 132px; }
+  #turnwho { font-weight: bold; font-size: 15px; letter-spacing: .5px; }
+  #clock { font-size: 22px; font-weight: bold; font-variant-numeric: tabular-nums; }
+  #clock.low { color: var(--danger); }
+  #windbox { padding: 6px 10px; font-size: 12px; text-align: right; }
+  #windbar { height: 6px; background: #1d2b12; border-radius: 3px; margin-top: 4px; position: relative; width: 88px; }
+  #windfill { position: absolute; top: 0; bottom: 0; left: 50%; background: var(--hot); border-radius: 3px; }
+
+  /* squad roster */
+  #roster {
+    position: absolute; top: calc(env(safe-area-inset-top,0px) + 96px);
+    left: 8px; display: flex; flex-direction: column; gap: 4px;
+    max-height: 44vh; overflow: hidden;
+  }
+  .pip {
+    pointer-events: auto; cursor: pointer;
+    display: flex; align-items: center; gap: 5px;
+    background: var(--panel); border: 2px solid var(--edge);
+    border-radius: 8px; padding: 2px 6px; font-size: 11px; width: 104px;
+  }
+  .pip.sel { border-color: var(--hot); }
+  .pip.spent { opacity: .4; }
+  .pip.dead { display: none; }
+  .pipbar { flex: 1; height: 5px; background: #331; border-radius: 3px; overflow: hidden; }
+  .pipfill { height: 100%; background: var(--team-a); }
+  .pipname { width: 20px; font-weight: bold; }
+
+  /* reticle */
+  #retic {
+    position: absolute; left: 50%; top: 50%; width: 42px; height: 42px;
+    margin: -21px 0 0 -21px; opacity: .9;
+  }
+  #retic div { position: absolute; background: var(--hot); }
+  #retic .h { left: 0; right: 0; top: 20px; height: 2px; }
+  #retic .v { top: 0; bottom: 0; left: 20px; width: 2px; }
+  #retic .dot { left: 18px; top: 18px; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+  #retic.hidden { display: none; }
+
+  /* power meter */
+  #powerwrap {
+    position: absolute; left: 50%; top: 50%; margin: 30px 0 0 -70px;
+    width: 140px; height: 12px; background: rgba(0,0,0,.55);
+    border: 2px solid var(--edge); border-radius: 7px; overflow: hidden; display: none;
+  }
+  #powerwrap.show { display: block; }
+  #powerfill { height: 100%; width: 0%; background: linear-gradient(90deg,#8bd63a,#f4e03a,#ff4d2e); }
+
+  /* joystick */
+  #stick {
+    position: absolute; left: 14px; bottom: calc(var(--safe) + 96px);
+    width: 118px; height: 118px; border-radius: 50%;
+    background: rgba(10,20,6,.42); border: 2px solid var(--edge);
+    pointer-events: auto; touch-action: none;
+  }
+  #stickknob {
+    position: absolute; left: 50%; top: 50%; width: 46px; height: 46px;
+    margin: -23px 0 0 -23px; border-radius: 50%;
+    background: rgba(180,255,80,.5); border: 2px solid var(--hot);
+  }
+
+  /* right cluster */
+  #rightpad {
+    position: absolute; right: 12px; bottom: calc(var(--safe) + 92px);
+    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  }
+  .bigbtn {
+    pointer-events: auto; width: 88px; height: 88px; border-radius: 50%;
+    border: 3px solid var(--edge); background: rgba(12,22,8,.8);
+    color: var(--ink); font: inherit; font-weight: bold; font-size: 13px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    line-height: 1.1; cursor: pointer; touch-action: none;
+  }
+  .bigbtn .em { font-size: 26px; }
+  .bigbtn:active { transform: scale(.93); }
+  #firebtn { border-color: #7a2a18; background: rgba(60,14,6,.8); }
+  #hopbtn  { width: 72px; height: 72px; }
+
+  /* bottom bar */
+  #bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 6px 8px calc(var(--safe) + 6px);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  #weprow { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; pointer-events: auto; scrollbar-width: none; }
+  #weprow::-webkit-scrollbar { display: none; }
+  .wep {
+    pointer-events: auto; flex: 0 0 auto; cursor: pointer;
+    background: var(--panel); border: 2px solid var(--edge); border-radius: 9px;
+    padding: 3px 7px; font-size: 10px; text-align: center; min-width: 54px;
+  }
+  .wep .em { font-size: 20px; display: block; line-height: 1.1; }
+  .wep .ammo { color: var(--dim); font-size: 9px; }
+  .wep.sel { border-color: var(--hot); background: #23400f; }
+  .wep.out { opacity: .3; }
+  #cmdrow { display: flex; gap: 6px; justify-content: center; }
+  #cmdrow .btn { font-size: 12px; padding: 7px 10px; flex: 1 1 0; max-width: 130px; }
+  #swarmbtn { border-color: #7a5a10; color: #ffd84d; }
+
+  /* toast */
+  #toasts {
+    position: absolute; left: 50%; top: 10%; transform: translateX(-50%);
+    display: flex; flex-direction: column-reverse; align-items: center; gap: 5px;
+    width: min(70%, 420px); pointer-events: none;
+  }
+  .toast {
+    background: rgba(8,16,4,.78); border: 1px solid var(--edge); border-radius: 9px;
+    padding: 5px 11px; font-weight: bold; font-size: 12.5px; text-align: center;
+    line-height: 1.3; animation: pop .28s ease-out;
+  }
+  .toast.big { font-size: 16px; color: var(--hot); border-color: var(--hot); }
+  @keyframes pop { from { transform: scale(.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+
+  /* screens */
+  .screen {
+    position: absolute; inset: 0; z-index: 20; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 30%, rgba(20,42,10,.72) 0%, rgba(4,8,3,.93) 78%);
+    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    overflow-y: auto; padding: 20px 14px;
+  }
+  .screen.hidden { display: none; }
+  .sheet {
+    max-width: 460px; width: 100%; text-align: center;
+    background: rgba(6, 12, 4, .62); border-radius: 18px; padding: 18px 14px 22px;
+    box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  }
+  h1 {
+    margin: 0; font-size: 13vw; line-height: .92; letter-spacing: -1px;
+    color: var(--hot); text-shadow: 4px 4px 0 #2a4a10, 8px 8px 0 rgba(0,0,0,.5);
+    font-weight: 900;
+  }
+  @media (min-width: 520px) { h1 { font-size: 66px; } }
+  .sub { color: var(--dim); font-size: 14px; margin: 6px 0 16px; line-height: 1.45; }
+  .row { display: flex; gap: 8px; align-items: center; justify-content: center; margin: 9px 0; flex-wrap: wrap; }
+  .row label { font-size: 12px; color: var(--dim); min-width: 74px; text-align: right; }
+  input[type=text] {
+    background: #0d1a06; border: 2px solid var(--edge); color: var(--ink);
+    border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; width: 168px;
+  }
+  .seg { display: flex; gap: 4px; }
+  .seg .btn { padding: 6px 11px; font-size: 12px; }
+  #playbtn {
+    margin-top: 16px; font-size: 22px; padding: 14px 40px;
+    background: #2f5a10; border-color: var(--hot); color: #fff;
+  }
+  .fine { color: #5f7350; font-size: 11px; margin-top: 18px; line-height: 1.6; }
+  .fine b { color: var(--dim); }
+  #loadnote { color: var(--hot); font-size: 13px; height: 16px; margin-top: 8px; }
+  #gtitle { font-size: 9vw; white-space: pre-line; }
+  @media (min-width: 520px) { #gtitle { font-size: 46px; } }
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+
+<div id="ui">
+  <div id="topbar">
+    <div id="turnbox" class="card">
+      <div id="turnwho">—</div>
+      <div id="clock">--</div>
+      <div id="roundlbl" style="color:var(--dim)">round 1</div>
+    </div>
+    <div id="windbox" class="card">
+      <div id="windtxt">WIND —</div>
+      <div id="windbar"><div id="windfill"></div></div>
+      <div id="alivetxt" style="margin-top:5px"></div>
+    </div>
+  </div>
+
+  <div id="roster"></div>
+
+  <div id="retic"><div class="h"></div><div class="v"></div><div class="dot"></div></div>
+  <div id="powerwrap"><div id="powerfill"></div></div>
+
+  <div id="stick"><div id="stickknob"></div></div>
+
+  <div id="rightpad">
+    <button id="hopbtn" class="bigbtn"><span class="em">🦘</span>HOP</button>
+    <button id="firebtn" class="bigbtn"><span class="em">💥</span>HOLD<br>TO FIRE</button>
+  </div>
+
+  <div id="bottom">
+    <div id="weprow"></div>
+    <div id="cmdrow">
+      <button id="swarmbtn" class="btn">🦗🦗 SWARM</button>
+      <button id="rallybtn" class="btn">📣 RALLY</button>
+      <button id="nextbtn" class="btn">⤵ NEXT</button>
+      <button id="endbtn" class="btn">⏭ END</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="sheet">
+    <h1>GRASSHOPPERS</h1>
+    <div class="sub">
+      Worms, but you command the <b>entire swarm every turn</b>, the island is a
+      procedurally generated destructible voxel world, and the weapons have
+      absolutely no business being this stupid.
+    </div>
+    <div class="row">
+      <label for="seedin">Seed</label>
+      <input id="seedin" type="text" value="" maxlength="20" autocomplete="off" spellcheck="false">
+      <button id="reseed" class="btn">🎲</button>
+    </div>
+    <div class="row">
+      <label>Squad</label>
+      <div class="seg" id="squadseg"></div>
+    </div>
+    <div class="row">
+      <label>Enemy AI</label>
+      <div class="seg" id="diffseg"></div>
+    </div>
+    <div class="row">
+      <label>Detail</label>
+      <div class="seg" id="qualseg"></div>
+    </div>
+    <button id="playbtn" class="btn">HOP TO IT</button>
+    <div id="loadnote"></div>
+    <div class="fine">
+      <b>Touch:</b> left stick hops · drag anywhere to look · hold 💥 to charge, release to fire<br>
+      <b>Keys:</b> WASD hop · Space leap · mouse-drag look · hold Click / Enter to fire<br>
+      1–9 pick weapon · Tab next hopper · Q swarm fire · R rally · E end turn
+    </div>
+  </div>
+</div>
+
+<div id="gameover" class="screen hidden">
+  <div class="sheet">
+    <h1 id="gtitle">—</h1>
+    <div class="sub" id="gsub"></div>
+    <div class="sub" id="gstats" style="color:var(--ink)"></div>
+    <button id="againbtn" class="btn" style="font-size:20px;padding:12px 32px;margin-top:10px">REMATCH</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   GRASSHOPPERS — a 3D voxel swarm-artillery game
+   ---------------------------------------------------------------------
+   Single self-contained page. No dependencies, no build step, no CDN.
+   Hand-rolled WebGL2 voxel renderer + procedural world + far too many
+   weapons that should never have been approved by anyone.
+
+   Layout of this script:
+     01  constants, math, rng, noise
+     02  webgl bootstrap + shaders
+     03  chunked voxel world + mesher
+     04  procedural worldgen
+     05  destruction, debris, particles
+     06  audio (WebAudio synth, no asset files)
+     07  entities: grasshoppers + physics
+     08  projectiles + the weapon roster
+     09  weapon firing / detonation logic
+     10  enemy AI
+     11  camera + input (touch first)
+     12  HUD + turn state machine
+     13  render frame + main loop + boot
+   ========================================================================= */
+"use strict";
+
+/* ========================================================== 01  constants */
+
+const WX = 80, WY = 56, WZ = 80;         // world size in voxels
+const CS = 16;                            // chunk edge
+const CX = Math.ceil(WX / CS), CY = Math.ceil(WY / CS), CZ = Math.ceil(WZ / CS);
+const NCHUNK = CX * CY * CZ;
+
+const GRAV = 26.0;                        // voxels / s^2
+const VOID_Y = -14;                       // below this you are gone
+
+// materials -------------------------------------------------------------
+const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SAND = 4, WOOD = 5, LEAF = 6,
+      CANDY = 7, CHEESE = 8, SLIME = 9, CRYSTAL = 10, SPLAT = 11, BOUNCE = 12,
+      ICE = 13, CHAR = 14;
+const NMAT = 15;
+
+// per-material colour, filled in by the biome picker at worldgen time
+const MATCOL = new Float32Array(NMAT * 3);
+// materials that make explosions bigger when they are blown up
+const BRITTLE = new Float32Array(NMAT); // extra radius multiplier
+let MAX_BRITTLE = 1;                    // largest entry, used to size blast scans
+
+const TEAM_A = 0, TEAM_B = 1;
+const TEAMCOL = [[0.71, 1.0, 0.23], [1.0, 0.37, 0.66]];
+const TEAMNAME = ["GREEN SWARM", "PINK PLAGUE"];
+
+/* =============================================================== 02  math */
+
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => t * t * (3 - 2 * t);
+const TAU = Math.PI * 2;
+
+function len3(x, y, z) { return Math.hypot(x, y, z); }
+
+// column-major 4x4, GL order ------------------------------------------------
+function m4ident(o) {
+  o[0]=1;o[1]=0;o[2]=0;o[3]=0; o[4]=0;o[5]=1;o[6]=0;o[7]=0;
+  o[8]=0;o[9]=0;o[10]=1;o[11]=0; o[12]=0;o[13]=0;o[14]=0;o[15]=1; return o;
+}
+function m4persp(o, fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  o[0]=f/aspect;o[1]=0;o[2]=0;o[3]=0;
+  o[4]=0;o[5]=f;o[6]=0;o[7]=0;
+  o[8]=0;o[9]=0;o[10]=(far+near)*nf;o[11]=-1;
+  o[12]=0;o[13]=0;o[14]=2*far*near*nf;o[15]=0;
+  return o;
+}
+function m4look(o, ex, ey, ez, cx, cy, cz, ux, uy, uz) {
+  let zx = ex - cx, zy = ey - cy, zz = ez - cz;
+  let l = Math.hypot(zx, zy, zz) || 1; zx /= l; zy /= l; zz /= l;
+  let xx = uy * zz - uz * zy, xy = uz * zx - ux * zz, xz = ux * zy - uy * zx;
+  l = Math.hypot(xx, xy, xz) || 1; xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  o[0]=xx;o[1]=yx;o[2]=zx;o[3]=0;
+  o[4]=xy;o[5]=yy;o[6]=zy;o[7]=0;
+  o[8]=xz;o[9]=yz;o[10]=zz;o[11]=0;
+  o[12]=-(xx*ex+xy*ey+xz*ez);
+  o[13]=-(yx*ex+yy*ey+yz*ez);
+  o[14]=-(zx*ex+zy*ey+zz*ez);
+  o[15]=1;
+  return o;
+}
+function m4mul(o, a, b) {
+  for (let c = 0; c < 4; c++) {
+    const b0=b[c*4],b1=b[c*4+1],b2=b[c*4+2],b3=b[c*4+3];
+    o[c*4+0]=a[0]*b0+a[4]*b1+a[8]*b2+a[12]*b3;
+    o[c*4+1]=a[1]*b0+a[5]*b1+a[9]*b2+a[13]*b3;
+    o[c*4+2]=a[2]*b0+a[6]*b1+a[10]*b2+a[14]*b3;
+    o[c*4+3]=a[3]*b0+a[7]*b1+a[11]*b2+a[15]*b3;
+  }
+  return o;
+}
+
+/* ========================================================== 03  rng/noise */
+
+function hashStr(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let rnd = mulberry32(1);                       // world rng (deterministic)
+const rr = (a, b) => a + rnd() * (b - a);
+const ri = (a, b) => Math.floor(a + rnd() * (b - a + 1));
+const pick = arr => arr[Math.floor(rnd() * arr.length)];
+// a second, non-deterministic stream for cosmetics so replays still match
+const fx = Math.random;
+const fr = (a, b) => a + fx() * (b - a);
+
+let NSEED = 0;
+function h3(x, y, z) {                          // integer hash -> [0,1)
+  let n = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^
+          Math.imul(z | 0, 2147483647) ^ NSEED;
+  n = (n ^ (n >>> 13)) >>> 0;
+  n = Math.imul(n, 1274126177) >>> 0;
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise3(x, y, z) {                     // trilinear value noise
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const tx = smooth(x - xi), ty = smooth(y - yi), tz = smooth(z - zi);
+  const c000=h3(xi,yi,zi),     c100=h3(xi+1,yi,zi);
+  const c010=h3(xi,yi+1,zi),   c110=h3(xi+1,yi+1,zi);
+  const c001=h3(xi,yi,zi+1),   c101=h3(xi+1,yi,zi+1);
+  const c011=h3(xi,yi+1,zi+1), c111=h3(xi+1,yi+1,zi+1);
+  const x00=lerp(c000,c100,tx), x10=lerp(c010,c110,tx);
+  const x01=lerp(c001,c101,tx), x11=lerp(c011,c111,tx);
+  return lerp(lerp(x00,x10,ty), lerp(x01,x11,ty), tz);
+}
+function vnoise2(x, z) { return vnoise3(x, 17.3, z); }
+function fbm2(x, z, oct, lac, gain) {
+  oct = oct || 4; lac = lac || 2.03; gain = gain || 0.5;
+  let s = 0, a = 0.5, f = 1, n = 0;
+  for (let i = 0; i < oct; i++) { s += a * vnoise2(x * f, z * f); n += a; a *= gain; f *= lac; }
+  return s / n;
+}
+function fbm3(x, y, z, oct) {
+  let s = 0, a = 0.5, f = 1, n = 0;
+  for (let i = 0; i < oct; i++) { s += a * vnoise3(x*f, y*f, z*f); n += a; a *= 0.5; f *= 2.03; }
+  return s / n;
+}
+
+
+/* ================================================ 04  webgl + shaders */
+
+const canvas = document.getElementById('glcanvas');
+let gl = null;
+try {
+  gl = canvas.getContext('webgl2', {
+    antialias: false, alpha: false, depth: true,
+    powerPreference: 'high-performance', preserveDrawingBuffer: false
+  });
+} catch (e) { gl = null; }
+
+function fatal(msg) {
+  document.body.innerHTML =
+    '<div style="padding:36px;font:16px/1.6 system-ui;color:#eaf7d8;background:#0b1206;height:100%">' +
+    '<h2 style="color:#d7ff3f">GRASSHOPPERS needs WebGL2</h2><p>' + msg + '</p></div>';
+  throw new Error(msg);
+}
+if (!gl) fatal('Your browser could not give us a WebGL2 context. Try a recent Chrome, Edge, Firefox or Safari 15+.');
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    fatal('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  attrs.forEach((n, i) => gl.bindAttribLocation(p, i, n));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    fatal('link: ' + gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const nm = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, '');
+    u[nm] = gl.getUniformLocation(p, nm);
+  }
+  return { p, u };
+}
+
+const FOG_FRAG = `#version 300 es
+precision mediump float;
+in vec3 vCol; in float vShade; in float vDist;
+uniform vec3 uFog; uniform vec2 uFogRange; uniform float uAlpha; uniform vec3 uTint;
+out vec4 outColor;
+void main() {
+  vec3 c = vCol * vShade * uTint;
+  float f = clamp((vDist - uFogRange.x) / (uFogRange.y - uFogRange.x), 0.0, 1.0);
+  c = mix(c, uFog, f * 0.9);
+  outColor = vec4(c, uAlpha);
+}`;
+
+const progChunk = program(`#version 300 es
+in vec3 aPos; in float aShade; in vec3 aCol;
+uniform mat4 uVP; uniform vec3 uEye;
+out vec3 vCol; out float vShade; out float vDist;
+void main() {
+  vCol = aCol; vShade = aShade;
+  vDist = length(aPos - uEye);
+  gl_Position = uVP * vec4(aPos, 1.0);
+}`, FOG_FRAG, ['aPos', 'aShade', 'aCol']);
+
+const progInst = program(`#version 300 es
+in vec3 aPos; in float aShade;
+in vec3 iPos; in vec3 iScale; in vec3 iCol; in float iRot;
+uniform mat4 uVP; uniform vec3 uEye;
+out vec3 vCol; out float vShade; out float vDist;
+void main() {
+  vec3 p = aPos * iScale;
+  float s = sin(iRot), c = cos(iRot);
+  vec3 w = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c) + iPos;
+  vCol = iCol; vShade = aShade;
+  vDist = length(w - uEye);
+  gl_Position = uVP * vec4(w, 1.0);
+}`, FOG_FRAG, ['aPos', 'aShade', 'iPos', 'iScale', 'iCol', 'iRot']);
+
+const progSky = program(`#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.9999, 1.0); }`,
+`#version 300 es
+precision mediump float;
+in vec2 vUv;
+uniform vec3 uTop; uniform vec3 uBot; uniform float uSunX; uniform float uSunY;
+out vec4 outColor;
+void main() {
+  vec3 c = mix(uBot, uTop, pow(vUv.y, 0.75));
+  float d = distance(vec2(vUv.x * 1.7, vUv.y), vec2(uSunX * 1.7, uSunY));
+  c += vec3(1.0, 0.92, 0.6) * (0.55 * exp(-d * 26.0) + 0.16 * exp(-d * 5.0));
+  outColor = vec4(c, 1.0);
+}`, ['aPos']);
+
+// full-screen triangle for the sky ------------------------------------------
+const skyVAO = gl.createVertexArray();
+gl.bindVertexArray(skyVAO);
+{
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
+gl.bindVertexArray(null);
+
+// ---------------------------------------------------------------- unit cube
+// 6 faces x 4 verts, positions in [-0.5, 0.5], baked directional shade
+const FACE_SHADE = [0.80, 0.80, 1.00, 0.42, 0.63, 0.63]; // +x -x +y -y +z -z
+const FACE_DIR = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+const FACE_VERT = [
+  [[.5,-.5,.5],[.5,-.5,-.5],[.5,.5,-.5],[.5,.5,.5]],        // +x
+  [[-.5,-.5,-.5],[-.5,-.5,.5],[-.5,.5,.5],[-.5,.5,-.5]],    // -x
+  [[-.5,.5,.5],[.5,.5,.5],[.5,.5,-.5],[-.5,.5,-.5]],        // +y
+  [[-.5,-.5,-.5],[.5,-.5,-.5],[.5,-.5,.5],[-.5,-.5,.5]],    // -y
+  [[-.5,-.5,.5],[.5,-.5,.5],[.5,.5,.5],[-.5,.5,.5]],        // +z
+  [[.5,-.5,-.5],[-.5,-.5,-.5],[-.5,.5,-.5],[.5,.5,-.5]]     // -z
+];
+
+const MAXINST = 9000;
+const instData = new Float32Array(MAXINST * 10);
+let instN = 0;
+const instVAO = gl.createVertexArray();
+const instBuf = gl.createBuffer();
+{
+  const vp = [], idx = [];
+  for (let f = 0; f < 6; f++) {
+    const base = f * 4;
+    for (let v = 0; v < 4; v++) {
+      const P = FACE_VERT[f][v];
+      vp.push(P[0], P[1], P[2], FACE_SHADE[f]);
+    }
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  gl.bindVertexArray(instVAO);
+  const vb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vp), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12);
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, instData.byteLength, gl.DYNAMIC_DRAW);
+  const S = 40;
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, S, 0);  gl.vertexAttribDivisor(2, 1);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 3, gl.FLOAT, false, S, 12); gl.vertexAttribDivisor(3, 1);
+  gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 3, gl.FLOAT, false, S, 24); gl.vertexAttribDivisor(4, 1);
+  gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 1, gl.FLOAT, false, S, 36); gl.vertexAttribDivisor(5, 1);
+  gl.bindVertexArray(null);
+}
+
+/** Queue one cube for this frame. */
+function cube(x, y, z, sx, sy, sz, r, g, b, rot) {
+  if (instN >= MAXINST) return;
+  const o = instN * 10;
+  instData[o] = x; instData[o+1] = y; instData[o+2] = z;
+  instData[o+3] = sx; instData[o+4] = sy; instData[o+5] = sz;
+  instData[o+6] = r; instData[o+7] = g; instData[o+8] = b;
+  instData[o+9] = rot || 0;
+  instN++;
+}
+
+let VW = 1, VH = 1, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, Q.dpr);
+  VW = Math.max(2, Math.round(canvas.clientWidth * DPR));
+  VH = Math.max(2, Math.round(canvas.clientHeight * DPR));
+  if (canvas.width !== VW || canvas.height !== VH) { canvas.width = VW; canvas.height = VH; }
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 250));
+
+
+/* ============================================ 05  voxel world + mesher */
+
+const vox = new Uint8Array(WX * WY * WZ);
+const vidx = (x, y, z) => x + WX * (z + WZ * y);
+
+function getV(x, y, z) {
+  if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return AIR;
+  return vox[x + WX * (z + WZ * y)];
+}
+function solidAt(x, y, z) { return getV(x | 0, y | 0, z | 0) !== AIR; }
+/** world-space (float) solidity test */
+function solidW(x, y, z) { return solidAt(Math.floor(x), Math.floor(y), Math.floor(z)); }
+
+function setV(x, y, z, m) {
+  if (x < 0 || y < 0 || z < 0 || x >= WX || y >= WY || z >= WZ) return;
+  const i = x + WX * (z + WZ * y);
+  if (vox[i] === m) return;
+  vox[i] = m;
+  dirtyAround(x, y, z);
+}
+function heightAt(x, z) {
+  if (x < 0 || z < 0 || x >= WX || z >= WZ) return -1;
+  for (let y = WY - 1; y >= 0; y--) if (vox[x + WX * (z + WZ * y)] !== AIR) return y;
+  return -1;
+}
+
+// ------------------------------------------------------------------- chunks
+const chunks = [];
+for (let cy = 0; cy < CY; cy++) for (let cz = 0; cz < CZ; cz++) for (let cx = 0; cx < CX; cx++) {
+  chunks.push({
+    cx, cy, cz, x0: cx * CS, y0: cy * CS, z0: cz * CS,
+    vao: null, vbo: null, ibo: null, count: 0, dirty: true, built: false,
+    cxc: cx * CS + CS / 2, cyc: cy * CS + CS / 2, czc: cz * CS + CS / 2
+  });
+}
+const cidx = (cx, cy, cz) => cx + CX * (cz + CZ * cy);
+const dirtyQ = [];
+
+function markChunk(cx, cy, cz) {
+  if (cx < 0 || cy < 0 || cz < 0 || cx >= CX || cy >= CY || cz >= CZ) return;
+  const c = chunks[cidx(cx, cy, cz)];
+  if (!c.dirty) { c.dirty = true; dirtyQ.push(c); }
+}
+function dirtyAround(x, y, z) {
+  const cx = (x / CS) | 0, cy = (y / CS) | 0, cz = (z / CS) | 0;
+  markChunk(cx, cy, cz);
+  const lx = x - cx * CS, ly = y - cy * CS, lz = z - cz * CS;
+  if (lx === 0) markChunk(cx - 1, cy, cz); if (lx === CS - 1) markChunk(cx + 1, cy, cz);
+  if (ly === 0) markChunk(cx, cy - 1, cz); if (ly === CS - 1) markChunk(cx, cy + 1, cz);
+  if (lz === 0) markChunk(cx, cy, cz - 1); if (lz === CS - 1) markChunk(cx, cy, cz + 1);
+}
+function markAllDirty() {
+  dirtyQ.length = 0;
+  for (const c of chunks) { c.dirty = true; dirtyQ.push(c); }
+}
+
+// ------------------------------------------------------------------- mesher
+const SCRATCH_V = new Float32Array(400000);
+const SCRATCH_I = new Uint32Array(120000);
+const NA = [0, 0, 1, 1, 2, 2];                       // normal axis per face
+const OTHER = [[1, 2], [1, 2], [0, 2], [0, 2], [0, 1], [0, 1]];
+
+function buildChunk(c) {
+  let vp = 0, ip = 0, vcount = 0;
+  const x1 = Math.min(c.x0 + CS, WX), y1 = Math.min(c.y0 + CS, WY), z1 = Math.min(c.z0 + CS, WZ);
+  const p = [0, 0, 0], q = [0, 0, 0];
+  for (let y = c.y0; y < y1; y++) {
+    for (let z = c.z0; z < z1; z++) {
+      const row = WX * (z + WZ * y);
+      for (let x = c.x0; x < x1; x++) {
+        const m = vox[x + row];
+        if (m === AIR) continue;
+        const cr = MATCOL[m * 3], cg = MATCOL[m * 3 + 1], cb = MATCOL[m * 3 + 2];
+        const jit = 0.93 + 0.14 * h3(x, y, z);
+        for (let f = 0; f < 6; f++) {
+          const d = FACE_DIR[f];
+          const nx = x + d[0], ny = y + d[1], nz = z + d[2];
+          if (getV(nx, ny, nz) !== AIR) continue;
+          const na = NA[f], a1 = OTHER[f][0], a2 = OTHER[f][1];
+          const verts = FACE_VERT[f];
+          let dark = 0;
+          const vshade = [0, 0, 0, 0];
+          for (let v = 0; v < 4; v++) {
+            const P = verts[v];
+            p[0] = nx; p[1] = ny; p[2] = nz;
+            const s1 = P[a1] > 0 ? 1 : -1, s2 = P[a2] > 0 ? 1 : -1;
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
+            q[a1] += s1;
+            const side1 = getV(q[0], q[1], q[2]) !== AIR ? 1 : 0;
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
+            q[a2] += s2;
+            const side2 = getV(q[0], q[1], q[2]) !== AIR ? 1 : 0;
+            let occ;
+            if (side1 && side2) occ = 3;
+            else {
+              q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
+              q[a1] += s1; q[a2] += s2;
+              occ = side1 + side2 + (getV(q[0], q[1], q[2]) !== AIR ? 1 : 0);
+            }
+            vshade[v] = 1 - occ * 0.235;
+            dark += occ;
+          }
+          const base = vcount;
+          const fs = FACE_SHADE[f] * jit;
+          for (let v = 0; v < 4; v++) {
+            const P = verts[v];
+            SCRATCH_V[vp++] = x + 0.5 + P[0];
+            SCRATCH_V[vp++] = y + 0.5 + P[1];
+            SCRATCH_V[vp++] = z + 0.5 + P[2];
+            SCRATCH_V[vp++] = fs * vshade[v];
+            SCRATCH_V[vp++] = cr; SCRATCH_V[vp++] = cg; SCRATCH_V[vp++] = cb;
+          }
+          vcount += 4;
+          // flip the quad split so the AO gradient does not crease diagonally
+          if (vshade[0] + vshade[2] > vshade[1] + vshade[3]) {
+            SCRATCH_I[ip++] = base; SCRATCH_I[ip++] = base + 1; SCRATCH_I[ip++] = base + 2;
+            SCRATCH_I[ip++] = base; SCRATCH_I[ip++] = base + 2; SCRATCH_I[ip++] = base + 3;
+          } else {
+            SCRATCH_I[ip++] = base + 1; SCRATCH_I[ip++] = base + 2; SCRATCH_I[ip++] = base + 3;
+            SCRATCH_I[ip++] = base + 1; SCRATCH_I[ip++] = base + 3; SCRATCH_I[ip++] = base;
+          }
+        }
+      }
+    }
+  }
+
+  c.count = ip;
+  c.dirty = false;
+  c.built = true;
+  if (ip === 0) return;
+  if (!c.vao) {
+    c.vao = gl.createVertexArray();
+    c.vbo = gl.createBuffer();
+    c.ibo = gl.createBuffer();
+    gl.bindVertexArray(c.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, c.vbo);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 12);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 28, 16);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, c.ibo);
+    gl.bindVertexArray(null);
+  }
+  // ELEMENT_ARRAY_BUFFER binding is VAO state — upload through this chunk's own
+  // VAO so a rebuild mid-frame cannot detach anyone else's index buffer.
+  gl.bindVertexArray(c.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, c.vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, SCRATCH_V.subarray(0, vp), gl.DYNAMIC_DRAW);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, SCRATCH_I.subarray(0, ip), gl.DYNAMIC_DRAW);
+  gl.bindVertexArray(null);
+}
+
+function flushDirty(budget) {
+  let n = 0;
+  while (dirtyQ.length && n < budget) {
+    const c = dirtyQ.shift();
+    if (!c.dirty) continue;
+    buildChunk(c); n++;
+  }
+  return dirtyQ.length;
+}
+
+/* ------------------------------------------------------------ ray marching */
+/** DDA through the voxel grid. Returns {x,y,z,mat,dist,nx,ny,nz} or null. */
+function raycast(ox, oy, oz, dx, dy, dz, maxd) {
+  let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
+  const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+  const tdx = Math.abs(1 / (dx || 1e-9)), tdy = Math.abs(1 / (dy || 1e-9)), tdz = Math.abs(1 / (dz || 1e-9));
+  let tmx = ((dx > 0 ? x + 1 - ox : ox - x)) * tdx;
+  let tmy = ((dy > 0 ? y + 1 - oy : oy - y)) * tdy;
+  let tmz = ((dz > 0 ? z + 1 - oz : oz - z)) * tdz;
+  let t = 0, nx = 0, ny = 0, nz = 0, guard = 0;
+  while (t < maxd && guard++ < 4096) {
+    if (x >= 0 && y >= 0 && z >= 0 && x < WX && y < WY && z < WZ) {
+      const m = vox[x + WX * (z + WZ * y)];
+      if (m !== AIR) return { x, y, z, mat: m, dist: t, nx, ny, nz };
+    } else if (y < 0) return null;
+    if (tmx < tmy && tmx < tmz) { t = tmx; tmx += tdx; x += sx; nx = -sx; ny = 0; nz = 0; }
+    else if (tmy < tmz) { t = tmy; tmy += tdy; y += sy; nx = 0; ny = -sy; nz = 0; }
+    else { t = tmz; tmz += tdz; z += sz; nx = 0; ny = 0; nz = -sz; }
+  }
+  return null;
+}
+
+/* ------------------------------------------------------- frustum culling */
+const frustum = new Float32Array(24);
+function extractFrustum(m) {
+  const P = [
+    [m[3]+m[0], m[7]+m[4], m[11]+m[8],  m[15]+m[12]],
+    [m[3]-m[0], m[7]-m[4], m[11]-m[8],  m[15]-m[12]],
+    [m[3]+m[1], m[7]+m[5], m[11]+m[9],  m[15]+m[13]],
+    [m[3]-m[1], m[7]-m[5], m[11]-m[9],  m[15]-m[13]],
+    [m[3]+m[2], m[7]+m[6], m[11]+m[10], m[15]+m[14]],
+    [m[3]-m[2], m[7]-m[6], m[11]-m[10], m[15]-m[14]]
+  ];
+  for (let i = 0; i < 6; i++) {
+    const p = P[i], l = Math.hypot(p[0], p[1], p[2]) || 1;
+    frustum[i*4] = p[0]/l; frustum[i*4+1] = p[1]/l; frustum[i*4+2] = p[2]/l; frustum[i*4+3] = p[3]/l;
+  }
+}
+function sphereVisible(x, y, z, r) {
+  for (let i = 0; i < 6; i++) {
+    if (frustum[i*4]*x + frustum[i*4+1]*y + frustum[i*4+2]*z + frustum[i*4+3] < -r) return false;
+  }
+  return true;
+}
+
+
+/* ================================================= 06  procedural worldgen */
+
+function sstep(e0, e1, x) { return smooth(clamp((x - e0) / (e1 - e0), 0, 1)); }
+
+const BIOMES = [
+  { name: 'THE MEADOW OF MILD REGRET',
+    grass: [0.36, 0.72, 0.20], dirt: [0.44, 0.31, 0.18], stone: [0.47, 0.49, 0.50],
+    skyTop: [0.24, 0.48, 0.86], skyBot: [0.72, 0.86, 0.98], fog: [0.66, 0.79, 0.93] },
+  { name: 'THE FUNGAL DISTRICT',
+    grass: [0.62, 0.24, 0.74], dirt: [0.28, 0.15, 0.36], stone: [0.20, 0.42, 0.44],
+    skyTop: [0.19, 0.06, 0.32], skyBot: [0.74, 0.30, 0.62], fog: [0.46, 0.20, 0.48] },
+  { name: 'THE CRUMB DESERT',
+    grass: [0.86, 0.74, 0.36], dirt: [0.76, 0.60, 0.30], stone: [0.62, 0.48, 0.32],
+    skyTop: [0.86, 0.56, 0.24], skyBot: [0.98, 0.88, 0.64], fog: [0.92, 0.78, 0.52] },
+  { name: 'PERMAFROST PICNIC AREA',
+    grass: [0.90, 0.95, 0.99], dirt: [0.66, 0.76, 0.86], stone: [0.40, 0.54, 0.68],
+    skyTop: [0.36, 0.55, 0.80], skyBot: [0.86, 0.93, 0.99], fog: [0.80, 0.89, 0.97] },
+  { name: 'CANDY GEOLOGY PRESERVE',
+    grass: [0.98, 0.48, 0.68], dirt: [0.80, 0.32, 0.52], stone: [0.60, 0.44, 0.78],
+    skyTop: [0.52, 0.36, 0.80], skyBot: [0.99, 0.78, 0.90], fog: [0.90, 0.70, 0.88] },
+  { name: 'THE TOXIC ALLOTMENT',
+    grass: [0.56, 0.86, 0.16], dirt: [0.26, 0.30, 0.12], stone: [0.14, 0.16, 0.14],
+    skyTop: [0.24, 0.28, 0.08], skyBot: [0.76, 0.84, 0.22], fog: [0.50, 0.58, 0.18] },
+  { name: 'MARS, PROBABLY',
+    grass: [0.72, 0.30, 0.16], dirt: [0.52, 0.22, 0.13], stone: [0.36, 0.20, 0.17],
+    skyTop: [0.44, 0.20, 0.16], skyBot: [0.94, 0.62, 0.40], fog: [0.78, 0.48, 0.34] }
+];
+
+let biome = BIOMES[0];
+
+function applyBiome(b) {
+  biome = b;
+  const set = (m, c) => { MATCOL[m*3] = c[0]; MATCOL[m*3+1] = c[1]; MATCOL[m*3+2] = c[2]; };
+  set(AIR,     [0, 0, 0]);
+  set(GRASS,   b.grass);
+  set(DIRT,    b.dirt);
+  set(STONE,   b.stone);
+  set(SAND,    [0.87, 0.79, 0.52]);
+  set(WOOD,    [0.42, 0.28, 0.15]);
+  set(LEAF,    [0.20, 0.55, 0.22]);
+  set(CANDY,   [0.99, 0.42, 0.72]);
+  set(CHEESE,  [1.00, 0.82, 0.20]);
+  set(SLIME,   [0.36, 0.92, 0.32]);
+  set(CRYSTAL, [0.42, 0.86, 0.96]);
+  set(SPLAT,   [0.96, 0.96, 0.90]);
+  set(BOUNCE,  [1.00, 0.22, 0.45]);
+  set(ICE,     [0.72, 0.90, 0.99]);
+  set(CHAR,    [0.12, 0.11, 0.10]);
+  BRITTLE.fill(1);
+  BRITTLE[CANDY] = 1.90; BRITTLE[ICE] = 1.45; BRITTLE[CHEESE] = 1.40;
+  BRITTLE[LEAF]  = 1.30; BRITTLE[CRYSTAL] = 1.50;
+  MAX_BRITTLE = 1;
+  for (let i = 0; i < NMAT; i++) MAX_BRITTLE = Math.max(MAX_BRITTLE, BRITTLE[i]);
+}
+
+/* ------------------------------------------------------------- structures */
+function blob(cx, cy, cz, r, mat, squash) {
+  const sy = squash || 1;
+  const ri_ = Math.ceil(r) + 1;
+  for (let y = -Math.ceil(r * sy) - 1; y <= Math.ceil(r * sy) + 1; y++)
+    for (let z = -ri_; z <= ri_; z++)
+      for (let x = -ri_; x <= ri_; x++) {
+        const d = Math.hypot(x, y / sy, z);
+        if (d <= r * (0.80 + 0.32 * h3(cx + x, cy + y, cz + z))) {
+          const px = cx + x, py = cy + y, pz = cz + z;
+          if (px >= 0 && py >= 0 && pz >= 0 && px < WX && py < WY && pz < WZ)
+            vox[vidx(px, py, pz)] = mat;
+        }
+      }
+}
+function column(x, z, y0, y1, mat) {
+  for (let y = y0; y <= y1; y++) if (y >= 0 && y < WY) vox[vidx(x, y, z)] = mat;
+}
+
+function plantTree(x, z, y) {
+  const h = ri(4, 8);
+  column(x, z, y, y + h, WOOD);
+  blob(x, y + h + 1, z, rr(2.2, 3.4), LEAF, 0.8);
+}
+function plantShroom(x, z, y) {
+  const h = ri(3, 6);
+  column(x, z, y, y + h, WOOD);
+  const r = rr(2.4, 4.0), cap = pick([CANDY, SLIME, CRYSTAL, CANDY]);
+  for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) {
+    const d = Math.hypot(dx, dz);
+    if (d <= r) {
+      const py = y + h + 1 + Math.round((1 - d / r) * 1.4);
+      if (py < WY) vox[vidx(clamp(x+dx,0,WX-1), py, clamp(z+dz,0,WZ-1))] = cap;
+      if (py - 1 < WY && d > r * 0.55) vox[vidx(clamp(x+dx,0,WX-1), py-1, clamp(z+dz,0,WZ-1))] = cap;
+    }
+  }
+}
+function plantSpire(x, z, y) {
+  const h = ri(8, 18);
+  for (let i = 0; i <= h; i++) {
+    const r = Math.max(0, 2.6 * (1 - i / h) + 0.4);
+    for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++)
+      if (Math.hypot(dx, dz) <= r) {
+        const px = x + dx, pz = z + dz, py = y + i;
+        if (px >= 0 && pz >= 0 && px < WX && pz < WZ && py < WY)
+          vox[vidx(px, py, pz)] = i > h - 3 ? CRYSTAL : STONE;
+      }
+  }
+}
+
+/* --------------------------------------------------------------- generator */
+let worldTops = new Int16Array(WX * WZ);
+
+function generateWorld(seedStr) {
+  const s = hashStr(seedStr || 'grasshopper');
+  rnd = mulberry32(s);
+  NSEED = (s ^ 0x9e3779b9) | 0;
+  vox.fill(AIR);
+  applyBiome(BIOMES[Math.floor(rnd() * BIOMES.length)]);
+
+  const F = 0.045 + rnd() * 0.028;            // terrain frequency
+  const AMP = 15 + rnd() * 13;
+  const BASE = 25 + rnd() * 5;
+  const wob = 0.22 + rnd() * 0.20;            // coastline wobble
+  const cutoff = 0.60 + rnd() * 0.12;
+  const caveT = 0.585 + rnd() * 0.06;
+  const cxm = WX / 2, czm = WZ / 2;
+
+  const tops = worldTops;
+  tops.fill(-1);
+
+  for (let z = 0; z < WZ; z++) {
+    for (let x = 0; x < WX; x++) {
+      const nx = x * F, nz = z * F;
+      let h = fbm2(nx, nz, 5, 2.03, 0.5);
+      const ridge = Math.abs(vnoise2(nx * 2.4 + 11.7, nz * 2.4 + 7.3) * 2 - 1);
+      h = h * 0.72 + (1 - ridge) * 0.28;
+
+      const dx = (x - cxm) / (WX * 0.5), dz = (z - czm) / (WZ * 0.5);
+      let d = Math.sqrt(dx * dx * 1.0 + dz * dz * 1.12);
+      d += (vnoise2(nx * 1.25 + 31.1, nz * 1.25 + 53.7) - 0.5) * wob * 2;
+      const fall = 1 - sstep(cutoff, 1.04, d);
+      if (fall <= 0.001) continue;
+
+      const top = Math.min(WY - 10, Math.floor(BASE + h * AMP * fall - (1 - fall) * 20));
+      if (top < 2) continue;
+      const thick = 9 + 19 * fall + 9 * fbm2(nx * 1.9 + 90.2, nz * 1.9 + 12.4, 3, 2.0, 0.5);
+      const bot = Math.max(1, Math.floor(top - thick));
+
+      for (let y = bot; y <= top && y < WY; y++) {
+        // caves — but never hollow out the very top crust
+        if (y < top - 2 && y > bot + 1) {
+          const cv = fbm3(x * 0.085, y * 0.115, z * 0.085, 3);
+          if (cv > caveT) continue;
+        }
+        let m;
+        if (y === top) m = GRASS;
+        else if (y > top - 4) m = DIRT;
+        else m = STONE;
+        if (m === STONE && h3(x >> 1, y >> 1, z >> 1) > 0.965) m = CRYSTAL;
+        if (m === GRASS && top < BASE - 4 - h3(x, 7, z) * 5) m = SAND;
+        vox[vidx(x, y, z)] = m;
+      }
+    }
+  }
+
+  // solid tops table (pre-props) --------------------------------------------
+  for (let z = 0; z < WZ; z++) for (let x = 0; x < WX; x++) tops[x + z * WX] = heightAt(x, z);
+
+  // props -------------------------------------------------------------------
+  const nTree = ri(14, 30), nShroom = ri(8, 20), nSpire = ri(2, 6);
+  const flatEnough = (x, z) => {
+    const t = tops[x + z * WX];
+    if (t < 4) return false;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const tt = tops[clamp(x+i,0,WX-1) + clamp(z+j,0,WZ-1) * WX];
+      if (tt < 0 || Math.abs(tt - t) > 2) return false;
+    }
+    return true;
+  };
+  for (let i = 0; i < nTree * 6; i++) {
+    if (i > nTree * 4) break;
+    const x = ri(4, WX - 5), z = ri(4, WZ - 5);
+    if (flatEnough(x, z) && rnd() < 0.34) plantTree(x, z, tops[x + z * WX] + 1);
+  }
+  for (let i = 0; i < nShroom * 5; i++) {
+    const x = ri(5, WX - 6), z = ri(5, WZ - 6);
+    if (flatEnough(x, z) && rnd() < 0.3) plantShroom(x, z, tops[x + z * WX] + 1);
+  }
+  for (let i = 0; i < nSpire * 8; i++) {
+    const x = ri(6, WX - 7), z = ri(6, WZ - 7);
+    if (flatEnough(x, z) && rnd() < 0.2) plantSpire(x, z, tops[x + z * WX] + 1);
+  }
+  // a couple of floating rocks, purely so someone can be knocked off one
+  for (let i = 0, n = ri(2, 5); i < n; i++) {
+    const x = ri(10, WX - 11), z = ri(10, WZ - 11);
+    const t = tops[x + z * WX];
+    if (t < 4) continue;
+    const y = Math.min(WY - 6, t + ri(9, 16));
+    blob(x, y, z, rr(3, 5.5), STONE, 0.55);
+    for (let dz = -6; dz <= 6; dz++) for (let dx = -6; dx <= 6; dx++) {
+      const px = x + dx, pz = z + dz;
+      if (px < 0 || pz < 0 || px >= WX || pz >= WZ) continue;
+      const hh = heightAt(px, pz);
+      if (hh >= y - 2 && hh <= y + 6) vox[vidx(px, hh, pz)] = GRASS;
+    }
+  }
+
+  for (let z = 0; z < WZ; z++) for (let x = 0; x < WX; x++) tops[x + z * WX] = heightAt(x, z);
+  markAllDirty();
+}
+
+/** Collect columns a grasshopper can stand on, with headroom. */
+function spawnCandidates() {
+  const out = [];
+  for (let z = 3; z < WZ - 3; z++) for (let x = 3; x < WX - 3; x++) {
+    const t = worldTops[x + z * WX];
+    if (t < 4 || t > WY - 6) continue;
+    let clear = true;
+    for (let y = t + 1; y <= t + 3; y++) if (getV(x, y, z) !== AIR) { clear = false; break; }
+    if (!clear) continue;
+    const m = getV(x, t, z);
+    if (m === LEAF || m === WOOD) continue;
+    out.push({ x: x + 0.5, y: t + 1, z: z + 0.5 });
+  }
+  return out;
+}
+
+
+/* ============================= 07  destruction, debris, particles, shake */
+
+const units = [];          // grasshoppers (filled in section 09)
+const shots = [];          // live projectiles / gadgets
+const parts = [];          // particles
+const debris = [];         // tumbling voxel chunks
+const fields = [];         // persistent area effects (gravity wells, trampolines)
+const MAXPART = 2600, MAXDEB = 900;
+
+let shake = 0, shakeT = 0;
+let flash = 0, flashCol = [1, 1, 1];
+function addShake(v) { shake = Math.min(2.6, shake + v); }
+function addFlash(v, c) { flash = Math.max(flash, v); flashCol = c || [1, 1, 1]; }
+
+function spawnPart(x, y, z, vx, vy, vz, r, g, b, size, life, grav) {
+  if (parts.length >= MAXPART) parts.shift();
+  parts.push({ x, y, z, vx, vy, vz, r, g, b, size, life, max: life, grav: grav === undefined ? 6 : grav });
+}
+function spawnDebris(x, y, z, vx, vy, vz, mat, size) {
+  if (debris.length >= MAXDEB) debris.shift();
+  debris.push({
+    x, y, z, vx, vy, vz, mat, size: size || 0.55,
+    rot: fr(0, TAU), spin: fr(-9, 9), life: fr(2.4, 5.0), rest: 0
+  });
+}
+function smokePuff(x, y, z, n, spread, col, size, life) {
+  for (let i = 0; i < n; i++) {
+    const a = fr(0, TAU), b = Math.acos(fr(-1, 1)), sp = fr(0.2, 1) * spread;
+    spawnPart(x, y, z,
+      Math.sin(b) * Math.cos(a) * sp, Math.cos(b) * sp * 0.9 + fr(0, spread * 0.5), Math.sin(b) * Math.sin(a) * sp,
+      col[0] * fr(0.75, 1.15), col[1] * fr(0.75, 1.15), col[2] * fr(0.75, 1.15),
+      size * fr(0.5, 1.4), life * fr(0.6, 1.3), fr(-1.5, 2.5));
+  }
+}
+
+/* --------------------------------------------------------------- carving */
+
+/**
+ * Blow a (noisy) sphere out of the world.
+ * opts: { dmg, knock, team, fillMat, scorch, noDebris, owner, kind }
+ */
+function explode(cx, cy, cz, R, opts) {
+  opts = opts || {};
+  const dmg = opts.dmg === undefined ? 34 : opts.dmg;
+  const knock = opts.knock === undefined ? 13 : opts.knock;
+  // how far out we have to look: brittle materials blow up wider than R
+  const R2 = R * (opts.scan === undefined ? MAX_BRITTLE * 1.06 : opts.scan);
+  const x0 = Math.max(0, Math.floor(cx - R2)), x1 = Math.min(WX - 1, Math.ceil(cx + R2));
+  const y0 = Math.max(0, Math.floor(cy - R2)), y1 = Math.min(WY - 1, Math.ceil(cy + R2));
+  const z0 = Math.max(0, Math.floor(cz - R2)), z1 = Math.min(WZ - 1, Math.ceil(cz + R2));
+  let removed = 0;
+  const wob = 0.16 + Math.min(0.3, R * 0.012);
+
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    const row = WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++) {
+      const m = vox[x + row];
+      if (m === AIR) continue;
+      const dx = x + 0.5 - cx, dy = y + 0.5 - cy, dz = z + 0.5 - cz;
+      const d = Math.hypot(dx, dy, dz);
+      const eff = R * BRITTLE[m] * (1 - wob + wob * 2 * h3(x * 3 + 7, y * 3, z * 3 + 13));
+      if (d > eff) continue;
+      vox[x + row] = AIR;
+      removed++;
+      if (!opts.noDebris && removed % 3 === 0 && debris.length < MAXDEB - 4) {
+        const s = 1 / (d + 0.6);
+        spawnDebris(x + 0.5, y + 0.5, z + 0.5,
+          dx * s * fr(3, 9), dy * s * fr(3, 9) + fr(2, 7), dz * s * fr(3, 9), m, fr(0.4, 0.8));
+      }
+    }
+  }
+  if (removed) dirtyBox(x0, y0, z0, x1, y1, z1);
+
+  if (opts.scorch) scorch(cx, cy, cz, R * 1.22);
+  if (opts.fillMat) paintShell(cx, cy, cz, R * 1.3, opts.fillMat);
+
+  // ---- entity damage & knockback
+  const HR = R * 1.45;
+  for (const u of units) {
+    if (!u.alive) continue;
+    const dx = u.x - cx, dy = u.y + 0.7 - cy, dz = u.z - cz;
+    const d = Math.hypot(dx, dy, dz);
+    if (d > HR) continue;
+    const t = 1 - d / HR;
+    if (dmg > 0) hurt(u, Math.round(dmg * Math.pow(t, 0.75)), opts.owner);
+    const k = knock * Math.pow(t, 0.6) / (d + 0.9);
+    u.vx += dx * k; u.vy += dy * k + knock * t * 0.42; u.vz += dz * k;
+    u.grounded = false;
+    u.tumble = Math.max(u.tumble, 0.35 + t * 0.7);
+  }
+
+  if (!opts.noCrumble && removed) crumble(x0, y0, z0, x1, y1, z1);
+  return removed;
+}
+
+/** char the surface of a blast for that "well that used to be a hill" look */
+function scorch(cx, cy, cz, R) {
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(WY - 1, Math.ceil(cy + R));
+  const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.ceil(cz + R));
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    const row = WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++) {
+      const m = vox[x + row];
+      if (m === AIR || m === CHAR) continue;
+      if (Math.hypot(x + .5 - cx, y + .5 - cy, z + .5 - cz) > R) continue;
+      if (h3(x, y + 5, z) > 0.55) continue;
+      vox[x + row] = CHAR;
+    }
+  }
+}
+
+/** coat the inside surface of a sphere with a material (cheese, candy, splat…) */
+function paintShell(cx, cy, cz, R, mat) {
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(WY - 1, Math.ceil(cy + R));
+  const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.ceil(cz + R));
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    const row = WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++) {
+      if (vox[x + row] === AIR) continue;
+      if (Math.hypot(x + .5 - cx, y + .5 - cy, z + .5 - cz) > R) continue;
+      vox[x + row] = mat;
+    }
+  }
+  dirtyBox(x0, y0, z0, x1, y1, z1);
+}
+
+/** fill air with a material (sand, candy, ice bridges) */
+function fillSphere(cx, cy, cz, R, mat, onlyAir) {
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(WX - 1, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(WY - 1, Math.ceil(cy + R));
+  const z0 = Math.max(0, Math.floor(cz - R)), z1 = Math.min(WZ - 1, Math.ceil(cz + R));
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    const row = WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++) {
+      if (onlyAir && vox[x + row] !== AIR) continue;
+      const d = Math.hypot(x + .5 - cx, y + .5 - cy, z + .5 - cz);
+      if (d > R * (0.82 + 0.3 * h3(x, y, z))) continue;
+      vox[x + row] = mat;
+    }
+  }
+  dirtyBox(x0, y0, z0, x1, y1, z1);
+}
+
+function dirtyBox(x0, y0, z0, x1, y1, z1) {
+  for (let cy = Math.max(0, (y0/CS)|0); cy <= Math.min(CY-1, (y1/CS)|0); cy++)
+    for (let cz = Math.max(0, (z0/CS)|0); cz <= Math.min(CZ-1, (z1/CS)|0); cz++)
+      for (let cx = Math.max(0, (x0/CS)|0); cx <= Math.min(CX-1, (x1/CS)|0); cx++)
+        markChunk(cx, cy, cz);
+}
+
+/** anything left completely unsupported after a blast falls apart */
+function crumble(x0, y0, z0, x1, y1, z1) {
+  const drop = [];
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+    const row = WX * (z + WZ * y);
+    for (let x = x0; x <= x1; x++) {
+      const m = vox[x + row];
+      if (m === AIR) continue;
+      let n = 0;
+      if (getV(x+1,y,z) !== AIR) n++;
+      if (getV(x-1,y,z) !== AIR) n++;
+      if (getV(x,y+1,z) !== AIR) n++;
+      if (getV(x,y-1,z) !== AIR) n++;
+      if (getV(x,y,z+1) !== AIR) n++;
+      if (getV(x,y,z-1) !== AIR) n++;
+      if (n === 0) drop.push(x, y, z, m);
+    }
+  }
+  for (let i = 0; i < drop.length; i += 4) {
+    const x = drop[i], y = drop[i+1], z = drop[i+2], m = drop[i+3];
+    vox[x + WX * (z + WZ * y)] = AIR;
+    spawnDebris(x + .5, y + .5, z + .5, fr(-1.5, 1.5), fr(0, 2), fr(-1.5, 1.5), m, 0.9);
+  }
+  if (drop.length) dirtyBox(x0, y0, z0, x1, y1, z1);
+}
+
+/* --------------------------------------------------------------- stepping */
+function stepParticles(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.life -= dt;
+    if (p.life <= 0) { parts[i] = parts[parts.length - 1]; parts.pop(); continue; }
+    p.vy -= p.grav * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    p.vx *= 0.985; p.vz *= 0.985;
+  }
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i];
+    d.life -= dt;
+    if (d.life <= 0 || d.y < VOID_Y) { debris[i] = debris[debris.length - 1]; debris.pop(); continue; }
+    if (d.rest > 0) { d.rest -= dt; continue; }
+    d.vy -= GRAV * 0.9 * dt;
+    let nx = d.x + d.vx * dt, ny = d.y + d.vy * dt, nz = d.z + d.vz * dt;
+    if (solidW(nx, d.y, d.z)) { d.vx *= -0.34; nx = d.x; }
+    if (solidW(d.x, d.y, nz)) { d.vz *= -0.34; nz = d.z; }
+    if (solidW(nx, ny, nz)) {
+      if (d.vy < 0) { ny = Math.floor(d.y) + 0.02 + (solidW(nx, d.y, nz) ? 1 : 0); }
+      d.vy *= -0.24; d.vx *= 0.55; d.vz *= 0.55; d.spin *= 0.5;
+      if (Math.abs(d.vy) < 1.6) { d.vy = 0; d.rest = d.life; }
+    }
+    d.x = nx; d.y = ny; d.z = nz;
+    d.rot += d.spin * dt;
+  }
+}
+
+
+/* ================================ 08  audio — everything is synthesised */
+
+let AC = null, MASTER = null, muted = false;
+function audioInit() {
+  if (AC) return;
+  const C = window.AudioContext || window.webkitAudioContext;
+  if (!C) return;
+  AC = new C();
+  MASTER = AC.createGain();
+  MASTER.gain.value = 0.5;
+  MASTER.connect(AC.destination);
+}
+function resumeAudio() { if (AC && AC.state === 'suspended') AC.resume(); }
+
+let noiseBuf = null;
+function noise() {
+  if (!noiseBuf) {
+    noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const s = AC.createBufferSource();
+  s.buffer = noiseBuf; s.loop = true;
+  return s;
+}
+function env(node, t0, a, d, peak) {
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + a + d);
+  node.connect(g);
+  return g;
+}
+
+const sfx = {
+  boom(mag) {
+    if (!AC || muted) return;
+    const t = AC.currentTime, m = clamp(mag, 0.3, 3);
+    const n = noise();
+    const lp = AC.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1400 * m, t);
+    lp.frequency.exponentialRampToValueAtTime(60, t + 0.5 * m);
+    const g = env(lp, t, 0.008, 0.55 * m, 0.55 * Math.min(1.4, m));
+    n.connect(lp); g.connect(MASTER);
+    n.start(t); n.stop(t + 0.7 * m + 0.2);
+    const o = AC.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(110 * m, t);
+    o.frequency.exponentialRampToValueAtTime(24, t + 0.42 * m);
+    const g2 = env(o, t, 0.01, 0.45 * m, 0.5 * Math.min(1.2, m));
+    g2.connect(MASTER); o.start(t); o.stop(t + 0.6 * m + 0.2);
+  },
+  tick(f, dur, type, vol) {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    const o = AC.createOscillator();
+    o.type = type || 'square';
+    o.frequency.value = f;
+    const g = env(o, t, 0.006, dur || 0.08, vol || 0.12);
+    g.connect(MASTER); o.start(t); o.stop(t + (dur || 0.08) + 0.05);
+  },
+  boing() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    const o = AC.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(fr(180, 260), t);
+    o.frequency.exponentialRampToValueAtTime(fr(600, 900), t + 0.09);
+    o.frequency.exponentialRampToValueAtTime(fr(200, 320), t + 0.2);
+    const g = env(o, t, 0.008, 0.22, 0.16);
+    g.connect(MASTER); o.start(t); o.stop(t + 0.3);
+  },
+  whoosh(dur) {
+    if (!AC || muted) return;
+    const t = AC.currentTime, D = dur || 0.5;
+    const n = noise();
+    const bp = AC.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(400, t);
+    bp.frequency.exponentialRampToValueAtTime(2400, t + D);
+    const g = env(bp, t, D * 0.4, D * 0.6, 0.14);
+    n.connect(bp); g.connect(MASTER);
+    n.start(t); n.stop(t + D + 0.1);
+  },
+  choir() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    [261.6, 329.6, 392.0, 523.3].forEach((f, i) => {
+      const o = AC.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = f;
+      const lp = AC.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 1500;
+      o.connect(lp);
+      const g = env(lp, t + i * 0.04, 0.5, 1.7, 0.09);
+      g.connect(MASTER); o.start(t); o.stop(t + 2.6);
+    });
+  },
+  chirp(n) {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    for (let i = 0; i < (n || 4); i++) {
+      const o = AC.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(fr(1800, 3200), t + i * 0.055);
+      const g = env(o, t + i * 0.055, 0.004, 0.035, 0.07);
+      g.connect(MASTER); o.start(t + i * 0.055); o.stop(t + i * 0.055 + 0.06);
+    }
+  },
+  buzz(dur) {
+    if (!AC || muted) return;
+    const t = AC.currentTime, D = dur || 1.2;
+    const o = AC.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = 118;
+    const lfo = AC.createOscillator();
+    lfo.frequency.value = 26;
+    const lg = AC.createGain(); lg.gain.value = 42;
+    lfo.connect(lg); lg.connect(o.frequency);
+    const g = env(o, t, 0.06, D, 0.1);
+    g.connect(MASTER);
+    o.start(t); lfo.start(t); o.stop(t + D + 0.2); lfo.stop(t + D + 0.2);
+  },
+  whistle(dur) {
+    if (!AC || muted) return;
+    const t = AC.currentTime, D = dur || 1.5;
+    const o = AC.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(900, t);
+    o.frequency.linearRampToValueAtTime(2100, t + D);
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.13, t + D * 0.85);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + D + 0.08);
+    o.connect(g); g.connect(MASTER);
+    o.start(t); o.stop(t + D + 0.15);
+  },
+  splat() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    const n = noise();
+    const lp = AC.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.exponentialRampToValueAtTime(140, t + 0.18);
+    const g = env(lp, t, 0.005, 0.2, 0.3);
+    n.connect(lp); g.connect(MASTER); n.start(t); n.stop(t + 0.3);
+  },
+  yell(lowish) {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    const o = AC.createOscillator();
+    o.type = 'sawtooth';
+    const base = lowish ? 130 : 320;
+    o.frequency.setValueAtTime(base, t);
+    o.frequency.linearRampToValueAtTime(base * 1.9, t + 0.28);
+    o.frequency.linearRampToValueAtTime(base * 0.7, t + 0.62);
+    const f = AC.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 4; f.frequency.value = base * 3.2;
+    o.connect(f);
+    const g = env(f, t, 0.05, 0.6, 0.16);
+    g.connect(MASTER); o.start(t); o.stop(t + 0.75);
+  },
+  sneeze() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    const n = noise();
+    const bp = AC.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(2600, t);
+    bp.frequency.exponentialRampToValueAtTime(320, t + 0.34);
+    const g = env(bp, t, 0.012, 0.36, 0.34);
+    n.connect(bp); g.connect(MASTER); n.start(t); n.stop(t + 0.5);
+  },
+  engine(dur) {
+    if (!AC || muted) return;
+    const t = AC.currentTime, D = dur || 2;
+    const o = AC.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = 74;
+    const lfo = AC.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 15;
+    const lg = AC.createGain(); lg.gain.value = 30;
+    lfo.connect(lg); lg.connect(o.frequency);
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+    o.connect(lp);
+    const g = env(lp, t, 0.2, D, 0.11);
+    g.connect(MASTER);
+    o.start(t); lfo.start(t); o.stop(t + D + 0.3); lfo.stop(t + D + 0.3);
+  },
+  horn(dur) {
+    if (!AC || muted) return;
+    const t = AC.currentTime, D = dur || 1.4;
+    [1, 2.02, 3.01].forEach((mul, i) => {
+      const o = AC.createOscillator();
+      o.type = i ? 'sawtooth' : 'square';
+      o.frequency.value = 233 * mul;
+      const g = env(o, t, 0.05, D, 0.11 / (i + 1));
+      g.connect(MASTER); o.start(t); o.stop(t + D + 0.2);
+    });
+  },
+  warp() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    const o = AC.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(60, t);
+    o.frequency.exponentialRampToValueAtTime(1400, t + 0.9);
+    const g = env(o, t, 0.2, 0.8, 0.16);
+    g.connect(MASTER); o.start(t); o.stop(t + 1.2);
+  },
+  fanfare() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    [523, 659, 784, 1046].forEach((f, i) => {
+      const o = AC.createOscillator();
+      o.type = 'square'; o.frequency.value = f;
+      const g = env(o, t + i * 0.11, 0.01, 0.24, 0.12);
+      g.connect(MASTER); o.start(t + i * 0.11); o.stop(t + i * 0.11 + 0.3);
+    });
+  },
+  sad() {
+    if (!AC || muted) return;
+    const t = AC.currentTime;
+    [392, 370, 349, 262].forEach((f, i) => {
+      const o = AC.createOscillator();
+      o.type = 'triangle'; o.frequency.value = f;
+      const g = env(o, t + i * 0.16, 0.02, 0.34, 0.12);
+      g.connect(MASTER); o.start(t + i * 0.16); o.stop(t + i * 0.16 + 0.4);
+    });
+  }
+};
+
+
+/* ================================= 09  grasshoppers: physics + rendering */
+
+const HW = 0.36, HH = 1.05;          // half-width, height (feet at u.y)
+const HOP_MOVES = 6;                 // hops per grasshopper per turn
+
+const NAMES = [
+  'Skip', 'Twitch', 'Crumb', 'Doreen', 'Legsley', 'Chomp', 'Nibbler', 'Vault',
+  'Gary', 'Mandible', 'Sir Hops', 'Bap', 'Thorax', 'Pesto', 'Kevin', 'Sprocket',
+  'Wanda', 'Clatter', 'Fennel', 'Boing', 'Grub', 'Pip', 'Marge', 'Stridulate',
+  'Yeet', 'Barnaby', 'Nunchuk', 'Hilda', 'Tibia', 'Snap', 'Colin', 'Verruca'
+];
+
+function makeUnit(team, pos, name) {
+  return {
+    team, name, x: pos.x, y: pos.y, z: pos.z,
+    vx: 0, vy: 0, vz: 0, yaw: rr(0, TAU),
+    hp: 100, maxhp: 100, alive: true, grounded: false,
+    moves: HOP_MOVES, shot: false, tumble: 0, charge: 0, charging: false,
+    airT: 0, legT: 0, hurtT: 0, blind: 0, extraAP: 0, lastGround: pos.y
+  };
+}
+
+function boxHits(x, y, z) {
+  const x0 = Math.floor(x - HW), x1 = Math.floor(x + HW);
+  const y0 = Math.floor(y + 0.02), y1 = Math.floor(y + HH - 0.02);
+  const z0 = Math.floor(z - HW), z1 = Math.floor(z + HW);
+  for (let yy = y0; yy <= y1; yy++)
+    for (let zz = z0; zz <= z1; zz++)
+      for (let xx = x0; xx <= x1; xx++)
+        if (getV(xx, yy, zz) !== AIR) return true;
+  return false;
+}
+
+function stepUnit(u, dt) {
+  if (!u.alive) return;
+  u.hurtT = Math.max(0, u.hurtT - dt);
+  u.tumble = Math.max(0, u.tumble - dt);
+  u.vy -= GRAV * dt;
+
+  // gravity fields (Gravity Hiccup) invert the pull
+  for (const f of fields) {
+    if (f.kind !== 'grav') continue;
+    const d = Math.hypot(u.x - f.x, u.y - f.y, u.z - f.z);
+    if (d < f.r) u.vy += GRAV * 2.05 * dt * (1 - d / f.r);
+  }
+
+  const sub = Math.max(1, Math.ceil((Math.abs(u.vx) + Math.abs(u.vy) + Math.abs(u.vz)) * dt / 0.25));
+  const h = dt / sub;
+  for (let s = 0; s < sub; s++) {
+    let nx = u.x + u.vx * h;
+    if (boxHits(nx, u.y, u.z)) { u.vx *= -0.28; nx = u.x; }
+    u.x = nx;
+    let nz = u.z + u.vz * h;
+    if (boxHits(u.x, u.y, nz)) { u.vz *= -0.28; nz = u.z; }
+    u.z = nz;
+    let ny = u.y + u.vy * h;
+    if (boxHits(u.x, ny, u.z)) {
+      if (u.vy < 0) {
+        // landing
+        const fall = -u.vy;
+        if (fall > 23) {
+          hurt(u, Math.round((fall - 23) * 1.9), null, 'gravity');
+          smokePuff(u.x, u.y, u.z, 8, 3, [0.7, 0.6, 0.5], 0.24, 0.5);
+        }
+        if (fall > 5 && u.airT > 0.2) sfx.boing();
+        u.grounded = true; u.airT = 0;
+        u.vx *= 0.42; u.vz *= 0.42;
+      }
+      u.vy = 0; ny = u.y;
+    }
+    u.y = ny;
+  }
+
+  const onGround = boxHits(u.x, u.y - 0.07, u.z);
+  u.grounded = onGround && u.vy <= 0.01;
+  if (u.grounded) {
+    const fr_ = 1 - Math.min(1, 9.5 * dt);
+    u.vx *= fr_; u.vz *= fr_;
+    u.airT = 0; u.lastGround = u.y;
+  } else {
+    u.airT += dt;
+  }
+
+  // bounce pads left lying around by the Antigravity Trampoline
+  if (u.grounded) {
+    const bx = Math.floor(u.x), bz = Math.floor(u.z), by = Math.floor(u.y - 0.1);
+    if (getV(bx, by, bz) === BOUNCE) {
+      u.vy = 27; u.grounded = false;
+      sfx.boing(); sfx.tick(1400, 0.1, 'sine', 0.1);
+      smokePuff(u.x, u.y, u.z, 12, 4, [1, 0.3, 0.5], 0.3, 0.5);
+    }
+  }
+
+  // toxic tide (sudden death)
+  if (slimeY > 0 && u.y < slimeY) {
+    u.slimeT = (u.slimeT || 0) + dt;
+    if (u.slimeT > 0.5) { u.slimeT = 0; hurt(u, 9, null, 'slime'); }
+    if (fx() < dt * 20) smokePuff(u.x, u.y + 0.4, u.z, 1, 1.5, [0.4, 1, 0.35], 0.2, 0.7);
+  }
+
+  if (u.y < VOID_Y) {
+    u.hp = 0;
+    killUnit(u, 'the void', true);
+  }
+  if (Math.abs(u.vx) + Math.abs(u.vz) > 0.4)
+    u.yaw = Math.atan2(u.vz, u.vx);
+  u.legT += dt * (u.grounded ? 2 : 9);
+}
+
+function hopUnit(u, dirX, dirZ, power) {
+  if (!u.alive || !u.grounded) return false;
+  const p = clamp(power, 0, 1);
+  const up = 9.4 + p * 10.5;
+  const fwd = 4.2 + p * 11.5;
+  const l = Math.hypot(dirX, dirZ);
+  if (l > 0.001) { dirX /= l; dirZ /= l; u.yaw = Math.atan2(dirZ, dirX); }
+  else { dirX = Math.cos(u.yaw) * 0.25; dirZ = Math.sin(u.yaw) * 0.25; }
+  u.vx = dirX * fwd; u.vz = dirZ * fwd; u.vy = up;
+  u.grounded = false;
+  u.airT = 0.001;
+  sfx.boing();
+  smokePuff(u.x, u.y + 0.05, u.z, 5, 2.2, [0.75, 0.72, 0.6], 0.2, 0.35);
+  return true;
+}
+
+/* ------------------------------------------------------------ damage/death */
+function hurt(u, amount, owner, cause) {
+  if (!u.alive || amount <= 0) return;
+  u.hp -= amount;
+  u.hurtT = 0.35;
+  floater(u.x, u.y + 1.5, u.z, '-' + amount, u.team === TEAM_A ? '#ff8b6a' : '#ffd08a');
+  if (owner && owner.team !== u.team) owner.dmgDone = (owner.dmgDone || 0) + amount;
+  if (u.hp <= 0) {
+    u.hp = 0;
+    if (owner && owner !== u) { if (owner.team !== u.team) stats[owner.team].kills++; }
+    killUnit(u, cause, false);
+  }
+}
+
+function killUnit(u, cause, silent) {
+  if (!u.alive) return;
+  u.alive = false;
+  stats[u.team].lost++;
+  const c = TEAMCOL[u.team];
+  for (let i = 0; i < 26; i++)
+    spawnDebris(u.x, u.y + fr(0.1, 1.0), u.z, fr(-7, 7), fr(2, 11), fr(-7, 7),
+      u.team === TEAM_A ? LEAF : CANDY, fr(0.2, 0.42));
+  smokePuff(u.x, u.y + 0.6, u.z, 22, 6, c, 0.3, 0.9);
+  if (!silent) {
+    // grasshoppers are, regrettably, full of explosive enthusiasm
+    explode(u.x, u.y + 0.5, u.z, 2.7, { dmg: 16, knock: 12, owner: null, noDebris: false });
+    sfx.boom(0.7);
+  }
+  toast(u.name + ' has been thoroughly disassembled', false);
+  floater(u.x, u.y + 1.8, u.z, '💀', '#ffffff', 2.2);
+  refreshRoster();
+}
+
+/* ------------------------------------------------------------- rendering */
+function drawUnit(u, selected, t) {
+  const c = Math.cos(u.yaw), s = Math.sin(u.yaw);
+  const col = TEAMCOL[u.team];
+  const hurtMix = u.hurtT > 0 ? (Math.sin(u.hurtT * 60) > 0 ? 1 : 0) : 0;
+  const R = hurtMix ? 1 : col[0], G = hurtMix ? 0.3 : col[1], B = hurtMix ? 0.3 : col[2];
+  const dark = 0.62;
+  const air = !u.grounded;
+  const bob = u.grounded ? Math.sin(t * 3 + u.legT) * 0.03 : 0;
+  const tilt = air ? clamp(u.vy * 0.012, -0.16, 0.2) : 0;
+
+  const P = (ox, oy, oz, sx, sy, sz, r, g, b) => {
+    cube(u.x + ox * c - oz * s, u.y + oy + bob, u.z + ox * s + oz * c, sx, sy, sz, r, g, b, u.yaw);
+  };
+
+  // abdomen + thorax
+  P(-0.34, 0.44 - tilt * 0.5, 0, 0.62, 0.42, 0.44, R * dark, G * dark, B * dark);
+  P(0.10, 0.50, 0, 0.52, 0.46, 0.46, R, G, B);
+  // head
+  P(0.46, 0.58 + tilt, 0, 0.36, 0.36, 0.38, R * 1.08, G * 1.08, B * 1.08);
+  // eyes
+  P(0.60, 0.66 + tilt, 0.15, 0.14, 0.16, 0.14, 0.06, 0.05, 0.05);
+  P(0.60, 0.66 + tilt, -0.15, 0.14, 0.16, 0.14, 0.06, 0.05, 0.05);
+  // antennae
+  const aw = Math.sin(t * 4 + u.legT * 0.4) * 0.09;
+  P(0.66, 0.86 + aw, 0.10, 0.07, 0.30, 0.07, 0.10, 0.09, 0.06);
+  P(0.66, 0.86 - aw, -0.10, 0.07, 0.30, 0.07, 0.10, 0.09, 0.06);
+  // team helmet stripe
+  P(0.30, 0.74, 0, 0.30, 0.10, 0.50, 1, 1, 1);
+  // wings
+  P(-0.16, 0.62, 0.20, 0.66, 0.06, 0.16, R * 1.2, G * 1.2, B * 1.2);
+  P(-0.16, 0.62, -0.20, 0.66, 0.06, 0.16, R * 1.2, G * 1.2, B * 1.2);
+  // front legs
+  const kick = air ? 0.22 : Math.sin(u.legT * 2) * 0.06;
+  P(0.30, 0.20, 0.24, 0.08, 0.42, 0.08, 0.15, 0.13, 0.08);
+  P(0.30, 0.20, -0.24, 0.08, 0.42, 0.08, 0.15, 0.13, 0.08);
+  P(0.06, 0.20, 0.26, 0.08, 0.42, 0.08, 0.15, 0.13, 0.08);
+  P(0.06, 0.20, -0.26, 0.08, 0.42, 0.08, 0.15, 0.13, 0.08);
+  // the famous hind legs
+  const fold = air ? 0.34 : 0.0;
+  P(-0.26, 0.60 + fold * 0.5, 0.30, 0.16, 0.44, 0.12, R * 0.8, G * 0.8, B * 0.8);
+  P(-0.26, 0.60 + fold * 0.5, -0.30, 0.16, 0.44, 0.12, R * 0.8, G * 0.8, B * 0.8);
+  P(-0.40 - kick, 0.22 + fold, 0.32, 0.12, 0.44, 0.10, 0.16, 0.14, 0.09);
+  P(-0.40 - kick, 0.22 + fold, -0.32, 0.12, 0.44, 0.10, 0.16, 0.14, 0.09);
+
+  if (selected) {
+    const r = 0.9 + Math.sin(t * 5) * 0.08;
+    for (let i = 0; i < 8; i++) {
+      const a = t * 1.4 + i / 8 * TAU;
+      cube(u.x + Math.cos(a) * r, u.y + 1.85 + Math.sin(t * 4) * 0.08, u.z + Math.sin(a) * r,
+        0.11, 0.11, 0.11, 0.86, 1, 0.25, 0);
+    }
+  }
+  if (u.shot && u.moves <= 0) {
+    cube(u.x, u.y + 1.6, u.z, 0.18, 0.18, 0.18, 0.35, 0.35, 0.35, t);
+  }
+}
+
+
+/* ==================================================== 10  the weapon roster
+   Every one of these was signed off by a committee of grasshoppers who had
+   been awake for four days. Mechanically they are all different; that is the
+   entire point.
+   ------------------------------------------------------------------------ */
+
+const WEAPONS = [
+  { id: 'egg', tag: 'Egg', name: 'Grenade Egg', em: '🥚', ammo: -1, kind: 'lob', speed: 34,
+    r: 5.0, dmg: 42, fuse: 3.0, bounce: 0.42, aim: 'arc',
+    blurb: 'Standard issue. Laid this morning. Bounces, then regrets everything.' },
+
+  { id: 'sand', tag: 'Sand', name: 'Pocket Sand', em: '🏜️', ammo: -1, kind: 'cone', speed: 0,
+    r: 9, dmg: 14, spread: 0.55, push: 6, blind: 2, fill: SAND, aim: 'look',
+    blurb: 'SHA-SHA! Blinds them for two turns and fills their nice hole with sand.' },
+
+  { id: 'cricket', tag: 'Cricket', name: 'Holy Hand Cricket', em: '🦗', ammo: 1, kind: 'lob', speed: 30,
+    r: 11.5, dmg: 110, fuse: 3.2, bounce: 0.25, holy: true, scorch: true, aim: 'arc',
+    blurb: 'And the Lord did grin, and the grasshoppers did feast upon the lambs and sloths...' },
+
+  { id: 'cheese', tag: 'Cheese', name: 'Nuclear Cheese Wheel', em: '🧀', ammo: 2, kind: 'roller', speed: 26,
+    r: 8.5, dmg: 72, fuse: 7.5, aim: 'arc',
+    blurb: 'Rolls downhill melting a trench through the planet, then goes off. Aged badly.' },
+
+  { id: 'badger', tag: 'Badger', name: 'Sneezing Badger', em: '🦡', ammo: 2, kind: 'burrow', speed: 32,
+    r: 8.0, dmg: 68, fuse: 2.2, aim: 'arc',
+    blurb: 'Burrows in, tunnels somewhere random, sneezes catastrophically. Bless you.' },
+
+  { id: 'beenana', tag: 'Bee-nana', name: 'Bee-nana Bomb', em: '🍌', ammo: 2, kind: 'cluster', speed: 33,
+    r: 5.5, dmg: 28, fuse: 3.0, bounce: 0.3, kids: 6, kidHoming: true, aim: 'arc',
+    blurb: 'Splits into six bananas. The bananas split into bees. The bees hold grudges.' },
+
+  { id: 'grandma', tag: 'Grandma', name: "Grandma's Trebuchet", em: '👵', ammo: 1, kind: 'grandma', speed: 0,
+    r: 9.5, dmg: 85, aim: 'point',
+    blurb: 'Launches an actual grandmother from orbit. She bounces three times. She is furious.' },
+
+  { id: 'mower', tag: 'Mower', name: 'Lawnmower Uprising', em: '🌀', ammo: 2, kind: 'driver', speed: 0,
+    r: 4.0, dmg: 44, aim: 'look',
+    blurb: 'Autonomous. Shaves the top off the world in a straight line until it dies.' },
+
+  { id: 'vuvu', tag: 'Vuvuzela', name: 'Vuvuzela of Doom', em: '📯', ammo: 3, kind: 'cone', speed: 0,
+    r: 26, dmg: 6, spread: 0.34, push: 44, strip: true, aim: 'look',
+    blurb: 'No explosion. Just a wall of sound that removes everyone from the island.' },
+
+  { id: 'toad', tag: 'Toad', name: 'Exploding Toad', em: '🐸', ammo: 3, kind: 'toad', speed: 24,
+    r: 6.5, dmg: 58, hops: 4, aim: 'arc',
+    blurb: 'Hops toward the nearest enemy of its own accord. It has made peace with this.' },
+
+  { id: 'hiccup', tag: 'Hiccup', name: 'Gravity Hiccup', em: '🕳️', ammo: 2, kind: 'field', speed: 30,
+    r: 13, dmg: 18, fuse: 1.6, field: 'grav', dur: 4.5, aim: 'arc',
+    blurb: 'Inverts gravity in a huge sphere. Terrain floats. Everyone floats. Then it stops.' },
+
+  { id: 'pigeon', tag: 'Pigeons', name: 'Airstrike: The Pigeons', em: '🕊️', ammo: 2, kind: 'carpet', speed: 0,
+    r: 4.0, dmg: 30, count: 9, paint: SPLAT, aim: 'point',
+    blurb: 'A flock passes over the target. What they drop is not, technically, a bomb.' },
+
+  { id: 'locust', tag: 'Locust', name: 'Concrete Locust', em: '🗿', ammo: 1, kind: 'drill', speed: 0,
+    r: 6.5, dmg: 95, passes: 3, aim: 'point',
+    blurb: 'Falls from the sky, punches a hole clean through the island, comes back up. Thrice.' },
+
+  { id: 'tramp', tag: 'Tramp', name: 'Antigravity Trampoline', em: '🤸', ammo: 3, kind: 'field', speed: 30,
+    r: 3.2, dmg: 0, fuse: 2.4, field: 'tramp', aim: 'arc',
+    blurb: 'Permanent bounce pad. Launches literally anything that touches it. Including you.' },
+
+  { id: 'mint', tag: 'Mint', name: 'Mint Condition', em: '🍬', ammo: 2, kind: 'paintbomb', speed: 32,
+    r: 10, dmg: 8, fuse: 2.0, mat: CANDY, aim: 'arc',
+    blurb: 'Turns terrain into candy. Candy is brittle. Every future blast here is enormous.' },
+
+  { id: 'kettle', tag: 'Kettle', name: 'The Unstable Kettle', em: '☕', ammo: 3, kind: 'kettle', speed: 33,
+    r: 15, dmg: 95, bounce: 0.3, aim: 'arc',
+    blurb: 'Whistles for one to six seconds. 40% chance it is simply a nice cup of tea.' },
+
+  { id: 'mother', tag: 'Mother', name: 'Call the Mother Locust', em: '👑', ammo: 1, kind: 'buff', speed: 0,
+    r: 0, dmg: 0, aim: 'none',
+    blurb: 'Every grasshopper you have left gets another shot and a full tank of hops.' }
+];
+
+const WBYID = {};
+WEAPONS.forEach((w, i) => { w.idx = i; WBYID[w.id] = w; });
+
+// per-team ammo pools -------------------------------------------------------
+let ammo = [{}, {}];
+function resetAmmo() {
+  ammo = [{}, {}];
+  for (const t of [0, 1]) for (const w of WEAPONS) ammo[t][w.id] = w.ammo;
+}
+function haveAmmo(team, w) { return ammo[team][w.id] !== 0; }
+function useAmmo(team, w, n) {
+  if (ammo[team][w.id] < 0) return;
+  ammo[team][w.id] = Math.max(0, ammo[team][w.id] - (n || 1));
+}
+
+/* -------------------------------------------------------------------- wind */
+let windX = 0, windZ = 0;
+function rollWind() {
+  windX = rr(-7, 7); windZ = rr(-4.5, 4.5);
+}
+
+/* --------------------------------------------------------------- projectiles */
+function newShot(o) {
+  o.t = 0;
+  o.trailT = 0;
+  if (o.size === undefined) o.size = 0.42;
+  if (o.col === undefined) o.col = [1, 1, 1];
+  if (o.gravMul === undefined) o.gravMul = 1;
+  if (o.windMul === undefined) o.windMul = 1;
+  shots.push(o);
+  return o;
+}
+
+/**
+ * The one entry point for making a weapon happen.
+ * aim = { dx,dy,dz  (unit dir), power 0..1, px,py,pz (world target or null) }
+ */
+function fireWeapon(u, w, aim) {
+  const sp = w.speed * (0.42 + 0.58 * aim.power);
+  const ox = u.x + aim.dx * 0.9, oy = u.y + 0.85 + aim.dy * 0.9, oz = u.z + aim.dz * 0.9;
+  const base = { owner: u, team: u.team, w, x: ox, y: oy, z: oz,
+                 vx: aim.dx * sp + u.vx * 0.4, vy: aim.dy * sp + u.vy * 0.4, vz: aim.dz * sp + u.vz * 0.4 };
+
+  switch (w.kind) {
+    case 'lob': case 'cluster': case 'paintbomb':
+      newShot(Object.assign(base, { kind: 'lob', fuse: w.fuse, bounce: w.bounce || 0.35,
+        size: w.holy ? 0.6 : 0.42, col: w.holy ? [1, 0.95, 0.4] : [0.95, 0.9, 0.75] }));
+      if (w.holy) { sfx.choir(); toast('🦗 THE HOLY HAND CRICKET 🦗', true); }
+      else sfx.whoosh(0.4);
+      break;
+
+    case 'field':
+      newShot(Object.assign(base, { kind: 'lob', fuse: w.fuse, bounce: 0.25, size: 0.5,
+        col: w.field === 'grav' ? [0.35, 0.1, 0.6] : [1, 0.2, 0.45] }));
+      sfx.whoosh(0.4);
+      break;
+
+    case 'kettle':
+      newShot(Object.assign(base, { kind: 'lob', fuse: fr(1.0, 6.0), bounce: 0.3, size: 0.5,
+        col: [0.85, 0.88, 0.92], dud: fx() < 0.4, kettle: true }));
+      sfx.whistle(1.2);
+      toast('☕ the kettle is on', false);
+      break;
+
+    case 'roller':
+      newShot(Object.assign(base, { kind: 'roller', fuse: w.fuse, size: 1.5,
+        col: [1, 0.82, 0.2], rolling: false, gravMul: 1.15, windMul: 0.2 }));
+      sfx.whoosh(0.5);
+      break;
+
+    case 'burrow':
+      newShot(Object.assign(base, { kind: 'burrow', fuse: w.fuse, size: 0.55,
+        col: [0.85, 0.85, 0.88], dug: false, digT: 0, windMul: 0.4 }));
+      sfx.whoosh(0.35);
+      break;
+
+    case 'toad':
+      newShot(Object.assign(base, { kind: 'toad', size: 0.6, col: [0.35, 0.85, 0.3],
+        hopsLeft: w.hops, landT: 0, fuse: 14, windMul: 0.2 }));
+      sfx.tick(320, 0.16, 'square', 0.13);
+      break;
+
+    case 'cone':
+      coneBlast(u, w, aim);
+      return;
+
+    case 'driver': {
+      const l = Math.hypot(aim.dx, aim.dz) || 1;
+      newShot({ kind: 'mower', owner: u, team: u.team, w,
+        x: u.x + aim.dx / l * 1.4, y: u.y + 0.5, z: u.z + aim.dz / l * 1.4,
+        vx: aim.dx / l * 9, vy: 0, vz: aim.dz / l * 9, t: 0, trailT: 0,
+        size: 1.2, col: [0.9, 0.15, 0.15], life: 9, gravMul: 1, windMul: 0 });
+      sfx.engine(4);
+      toast('🌀 the mower has been released', false);
+      break;
+    }
+
+    case 'strike': case 'grandma': case 'carpet': case 'drill':
+      skyStrike(u, w, aim);
+      break;
+
+    case 'buff':
+      motherLocust(u);
+      return;
+  }
+}
+
+/* ------------------------------------------------------------ sky weapons */
+function skyStrike(u, w, aim) {
+  const p = aim.px !== null && aim.px !== undefined
+    ? { x: aim.px, y: aim.py, z: aim.pz }
+    : { x: u.x + aim.dx * 30, y: u.y + aim.dy * 30, z: u.z + aim.dz * 30 };
+  const topY = WY + 12;
+
+  if (w.kind === 'grandma') {
+    newShot({ kind: 'grandma', owner: u, team: u.team, w,
+      x: p.x, y: topY, z: p.z, vx: fr(-1, 1), vy: -6, vz: fr(-1, 1),
+      t: 0, trailT: 0, size: 1.6, col: [0.85, 0.7, 0.8], bouncesLeft: 3,
+      gravMul: 1.7, windMul: 0.2 });
+    sfx.yell(false);
+    toast('👵 SHE IS COMING', true);
+  } else if (w.kind === 'drill') {
+    newShot({ kind: 'drill', owner: u, team: u.team, w,
+      x: p.x, y: topY, z: p.z, vx: 0, vy: -34, vz: 0,
+      t: 0, trailT: 0, size: 2.4, col: [0.55, 0.55, 0.58],
+      passesLeft: w.passes, dir: -1, gravMul: 0, windMul: 0 });
+    sfx.horn(1.6);
+    toast('🗿 CONCRETE LOCUST INBOUND', true);
+  } else if (w.kind === 'carpet') {
+    const ang = fr(0, TAU), cx = Math.cos(ang), cz = Math.sin(ang);
+    for (let i = 0; i < w.count; i++) {
+      const off = (i - (w.count - 1) / 2) * 3.4;
+      newShot({ kind: 'lob', owner: u, team: u.team, w,
+        x: p.x + cx * off + fr(-1, 1), y: topY + i * 1.6, z: p.z + cz * off + fr(-1, 1),
+        vx: cx * 2, vy: -8, vz: cz * 2, t: 0, trailT: 0,
+        fuse: 99, bounce: 0, size: 0.5, col: [1, 1, 0.95],
+        paint: w.paint, gravMul: 1.2, windMul: 0.5 });
+    }
+    sfx.chirp(8);
+    toast('🕊️ incoming flock — take cover, or don\'t', true);
+  }
+}
+
+/* ------------------------------------------------------------ cone weapons */
+function coneBlast(u, w, aim) {
+  const R = w.r, half = w.spread;
+  const dx = aim.dx, dy = aim.dy, dz = aim.dz;
+
+  // visible blast cone
+  for (let i = 0; i < 90; i++) {
+    const t = fr(0.2, 1);
+    const jx = dx + fr(-half, half), jy = dy + fr(-half, half), jz = dz + fr(-half, half);
+    const l = Math.hypot(jx, jy, jz) || 1;
+    spawnPart(u.x + jx / l * 1.2, u.y + 0.8 + jy / l * 1.2, u.z + jz / l * 1.2,
+      jx / l * R * fr(1.0, 2.2), jy / l * R * fr(1.0, 2.2), jz / l * R * fr(1.0, 2.2),
+      w.id === 'vuvu' ? 0.9 : 0.90, w.id === 'vuvu' ? 0.4 : 0.80, w.id === 'vuvu' ? 0.95 : 0.45,
+      fr(0.2, 0.55), fr(0.35, 0.9) * (1 + t), -1);
+  }
+
+  // push + damage anything inside the cone
+  for (const v of units) {
+    if (!v.alive) continue;
+    const ex = v.x - u.x, ey = v.y + 0.6 - (u.y + 0.8), ez = v.z - u.z;
+    const d = Math.hypot(ex, ey, ez);
+    if (d > R || d < 0.2) continue;
+    const dot = (ex * dx + ey * dy + ez * dz) / d;
+    if (dot < 1 - half * 1.2) continue;
+    const t = (1 - d / R);
+    if (w.dmg) hurt(v, Math.round(w.dmg * t), u);
+    if (!v.alive) continue;
+    const push = w.push * t;
+    v.vx += dx * push; v.vy += dy * push + push * 0.45; v.vz += dz * push;
+    v.grounded = false; v.tumble = 1.1;
+    if (w.blind) { v.blind = w.blind; floater(v.x, v.y + 1.7, v.z, 'BLIND!', '#ffe066', 1.6); }
+  }
+
+  // terrain effect
+  const steps = Math.floor(R * 2.2);
+  for (let i = 3; i < steps; i++) {
+    const t = i / steps;
+    const px = u.x + dx * R * t, py = u.y + 0.8 + dy * R * t, pz = u.z + dz * R * t;
+    const rad = 0.7 + half * R * t * 0.9;
+    if (w.strip) {
+      // sandblast: shave loose voxels off the surface
+      explode(px, py, pz, rad * 0.55, { dmg: 0, knock: 0, noDebris: fx() > 0.35 });
+    } else if (w.fill) {
+      fillSphere(px, py, pz, rad * 0.7, w.fill, true);
+    }
+  }
+  if (w.id === 'vuvu') { sfx.horn(1.9); addShake(0.9); toast('📯 BWAAAAAAAAAAA', true); }
+  else { sfx.splat(); toast('🏜️ SHA-SHA!', false); }
+}
+
+/* ------------------------------------------------------- the mother locust */
+function motherLocust(u) {
+  let n = 0;
+  for (const v of units) {
+    if (!v.alive || v.team !== u.team) continue;
+    v.shot = false; v.moves = HOP_MOVES; n++;
+    floater(v.x, v.y + 1.9, v.z, '+ACTION', '#d7ff3f', 1.8);
+    smokePuff(v.x, v.y + 0.8, v.z, 14, 4, [0.6, 1, 0.2], 0.3, 0.8);
+  }
+  // giant silhouette flies over
+  for (let i = 0; i < 200; i++) {
+    const t = i / 200;
+    spawnPart(t * WX, WY + 6 + Math.sin(t * 9) * 3, WZ * 0.5 + Math.cos(t * 5) * 12,
+      fr(-1, 1), fr(-3, -1), fr(-1, 1), 0.5, 0.95, 0.2, fr(0.4, 1.1), fr(1, 2.2), 0.4);
+  }
+  addFlash(0.75, [0.55, 1, 0.25]);
+  addShake(0.7);
+  sfx.buzz(2.2); sfx.fanfare();
+  toast('👑 THE MOTHER LOCUST ANSWERS — ' + n + ' grasshoppers rearmed', true);
+}
+
+
+/* ================================ 11  projectile simulation + detonation */
+
+function nearestUnitTo(x, y, z, team, enemyOnly) {
+  let best = null, bd = 1e9;
+  for (const u of units) {
+    if (!u.alive) continue;
+    if (enemyOnly && u.team === team) continue;
+    const d = Math.hypot(u.x - x, u.y + 0.6 - y, u.z - z);
+    if (d < bd) { bd = d; best = u; }
+  }
+  return best;
+}
+
+/** integrate a flying shot; returns 'terrain' | unit | 'void' | null */
+function flyStep(s, dt) {
+  s.vy -= GRAV * s.gravMul * dt;
+  s.vx += windX * s.windMul * dt;
+  s.vz += windZ * s.windMul * dt;
+  const sp = Math.hypot(s.vx, s.vy, s.vz);
+  const sub = Math.max(1, Math.ceil(sp * dt / 0.4));
+  const h = dt / sub;
+  for (let i = 0; i < sub; i++) {
+    const nx = s.x + s.vx * h, ny = s.y + s.vy * h, nz = s.z + s.vz * h;
+    if (solidW(nx, ny, nz)) {
+      // work out which face we came through, for bouncing
+      s.hitNx = solidW(nx, s.y, s.z) ? -Math.sign(s.vx) : 0;
+      s.hitNy = solidW(s.x, ny, s.z) ? -Math.sign(s.vy) : 0;
+      s.hitNz = solidW(s.x, s.y, nz) ? -Math.sign(s.vz) : 0;
+      if (!s.hitNx && !s.hitNy && !s.hitNz) s.hitNy = 1;
+      return 'terrain';
+    }
+    s.x = nx; s.y = ny; s.z = nz;
+    if (s.t > 0.12) {
+      for (const u of units) {
+        if (!u.alive) continue;
+        if (u === s.owner && s.t < 0.4) continue;
+        if (Math.hypot(u.x - s.x, u.y + 0.55 - s.y, u.z - s.z) < 0.85 + s.size * 0.5) return u;
+      }
+    }
+    if (s.y < VOID_Y || s.x < -40 || s.x > WX + 40 || s.z < -40 || s.z > WZ + 40) return 'void';
+  }
+  return null;
+}
+
+function bounceOff(s, damp) {
+  if (s.hitNx) { s.x -= s.vx * 0.02; s.vx = -s.vx * damp; }
+  if (s.hitNy) { s.y -= s.vy * 0.02; s.vy = -s.vy * damp; }
+  if (s.hitNz) { s.z -= s.vz * 0.02; s.vz = -s.vz * damp; }
+  s.vx *= 0.82; s.vz *= 0.82;
+  if (Math.hypot(s.vx, s.vy, s.vz) > 3.5) sfx.tick(fr(220, 400), 0.06, 'triangle', 0.07);
+}
+
+function trail(s, dt, col, rate, size) {
+  s.trailT += dt;
+  const step = rate || 0.022;
+  while (s.trailT > step) {
+    s.trailT -= step;
+    spawnPart(s.x + fr(-.1, .1), s.y + fr(-.1, .1), s.z + fr(-.1, .1),
+      fr(-.7, .7), fr(-.2, 1.1), fr(-.7, .7),
+      col[0], col[1], col[2], (size || 0.2) * fr(0.6, 1.3), fr(0.25, 0.6), -0.6);
+  }
+}
+
+function killShot(s) { const i = shots.indexOf(s); if (i >= 0) { shots[i] = shots[shots.length-1]; shots.pop(); } }
+
+/* -------------------------------------------------------------- detonation */
+function detonate(s, hitUnit) {
+  const w = s.w;
+  killShot(s);
+  const R = w.r, D = w.dmg;
+
+  if (w.kind === 'cluster' && !s.isKid) {
+    smokePuff(s.x, s.y, s.z, 22, 7, [1, 0.9, 0.2], 0.36, 0.8);
+    sfx.boom(0.6); addShake(0.28);
+    explode(s.x, s.y, s.z, R * 0.55, { dmg: D * 0.5, knock: 9, owner: s.owner });
+    for (let i = 0; i < w.kids; i++) {
+      const a = (i / w.kids) * TAU + fr(0, 1);
+      newShot({ kind: 'bee', owner: s.owner, team: s.team, w, isKid: true,
+        x: s.x, y: s.y + 0.6, z: s.z,
+        vx: Math.cos(a) * fr(6, 12), vy: fr(7, 13), vz: Math.sin(a) * fr(6, 12),
+        size: 0.26, col: [1, 0.9, 0.15], fuse: fr(4.5, 7), gravMul: 0.35, windMul: 0.3,
+        target: null });
+    }
+    sfx.buzz(2.4);
+    toast('🐝 the bees are out', false);
+    return;
+  }
+
+  if (s.kettle) {
+    if (s.dud) {
+      smokePuff(s.x, s.y, s.z, 26, 2.2, [0.9, 0.9, 0.95], 0.3, 1.6);
+      sfx.tick(520, 0.4, 'sine', 0.09);
+      toast('☕ ...it was just a nice cup of tea', false);
+      floater(s.x, s.y + 1, s.z, 'TEA', '#cfe8ff', 2.2);
+      return;
+    }
+    toast('☕ IT WAS NOT TEA', true);
+  }
+
+  if (w.kind === 'field') {
+    if (w.field === 'grav') { makeGravField(s.x, s.y, s.z, w.r, w.dur); return; }
+    if (w.field === 'tramp') { makeTrampoline(s.x, s.y, s.z, w.r); return; }
+  }
+
+  if (w.kind === 'paintbomb') {
+    explode(s.x, s.y, s.z, R * 0.45, { dmg: D, knock: 8, owner: s.owner });
+    paintShell(s.x, s.y, s.z, R, w.mat);
+    smokePuff(s.x, s.y, s.z, 40, 6, [1, 0.4, 0.7], 0.4, 1.3);
+    sfx.tick(880, 0.3, 'sine', 0.12); sfx.boom(0.5);
+    addShake(0.3);
+    toast('🍬 terrain converted to candy — that is now extremely fragile', false);
+    return;
+  }
+
+  const opts = { dmg: D, knock: w.holy ? 26 : 14, owner: s.owner, scorch: w.scorch };
+  const removed = explode(s.x, s.y, s.z, R, opts);
+  if (s.paint) paintShell(s.x, s.y, s.z, R * 1.15, s.paint);
+
+  const mag = clamp(R / 6, 0.4, 2.6);
+  sfx.boom(mag);
+  addShake(mag * 0.55);
+  smokePuff(s.x, s.y, s.z, Math.min(90, 18 + R * 5), R * 0.9,
+    w.holy ? [1, 0.95, 0.45] : [0.95, 0.62, 0.2], R * 0.09, 0.9);
+  smokePuff(s.x, s.y, s.z, Math.min(70, 12 + R * 4), R * 0.55, [0.28, 0.26, 0.24], R * 0.13, 1.7);
+  if (w.holy) { addFlash(0.9, [1, 0.96, 0.6]); }
+  else if (R > 9) addFlash(0.45, [1, 0.8, 0.4]);
+  if (hitUnit && hitUnit !== true) floater(s.x, s.y + 1.4, s.z, 'DIRECT HIT', '#ffe066', 2);
+}
+
+/* -------------------------------------------------------------- the fields */
+function makeGravField(x, y, z, r, dur) {
+  fields.push({ kind: 'grav', x, y, z, r, t: dur, max: dur });
+  sfx.warp(); addShake(0.8); addFlash(0.6, [0.5, 0.25, 0.9]);
+  toast('🕳️ GRAVITY HAS RESIGNED', true);
+  // rip the surface up into the air
+  let n = 0;
+  const R = Math.ceil(r);
+  for (let dy = -R; dy <= R && n < 620; dy++)
+    for (let dz = -R; dz <= R && n < 620; dz++)
+      for (let dx = -R; dx <= R && n < 620; dx++) {
+        const d = Math.hypot(dx, dy, dz);
+        if (d > r) continue;
+        const px = Math.floor(x + dx), py = Math.floor(y + dy), pz = Math.floor(z + dz);
+        const m = getV(px, py, pz);
+        if (m === AIR) continue;
+        if (getV(px, py + 1, pz) !== AIR) continue;   // surface only
+        if (fx() > 0.7) continue;
+        vox[px + WX * (pz + WZ * py)] = AIR;
+        const dd = debris.length < MAXDEB - 2;
+        if (dd) {
+          debris.push({ x: px + .5, y: py + .5, z: pz + .5,
+            vx: fr(-1.2, 1.2), vy: fr(1.5, 5.5), vz: fr(-1.2, 1.2),
+            mat: m, size: 0.95, rot: fr(0, TAU), spin: fr(-3, 3),
+            life: dur + fr(2, 4), rest: 0, floaty: { x, y, z, r } });
+        }
+        n++;
+      }
+  dirtyBox(Math.floor(x - r), Math.floor(y - r), Math.floor(z - r),
+           Math.ceil(x + r), Math.ceil(y + r), Math.ceil(z + r));
+  explode(x, y, z, r * 0.22, { dmg: 18, knock: 4, owner: null, noDebris: true });
+}
+
+function makeTrampoline(x, y, z, r) {
+  const gy = Math.floor(y);
+  let placed = 0;
+  for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.hypot(dx, dz) > r) continue;
+    const px = Math.floor(x + dx), pz = Math.floor(z + dz);
+    if (px < 0 || pz < 0 || px >= WX || pz >= WZ) continue;
+    let sy = -1;
+    for (let yy = Math.min(WY - 2, gy + 4); yy >= Math.max(0, gy - 6); yy--)
+      if (getV(px, yy, pz) !== AIR) { sy = yy; break; }
+    if (sy < 0) {
+      if (Math.abs(gy - y) < 3) { setV(px, gy, pz, BOUNCE); placed++; }
+      continue;
+    }
+    setV(px, sy, pz, BOUNCE); placed++;
+  }
+  sfx.boing(); sfx.tick(1200, 0.2, 'sine', 0.1);
+  smokePuff(x, y, z, 26, 4, [1, 0.25, 0.5], 0.3, 0.9);
+  toast('🤸 trampoline installed. permanently. good luck.', false);
+}
+
+function stepFields(dt) {
+  for (let i = fields.length - 1; i >= 0; i--) {
+    const f = fields[i];
+    f.t -= dt;
+    if (fx() < dt * 26) spawnPart(
+      f.x + fr(-f.r, f.r), f.y + fr(-f.r, f.r) * 0.5, f.z + fr(-f.r, f.r),
+      0, fr(1, 4), 0, 0.55, 0.25, 0.92, fr(0.15, 0.4), fr(0.5, 1.2), -3);
+    if (f.t <= 0) {
+      fields.splice(i, 1);
+      if (f.kind === 'grav') {
+        toast('…and gravity came back', false);
+        sfx.boom(1.1); addShake(0.7);
+        for (const d of debris) if (d.floaty) { d.floaty = null; d.vy = -3; d.life = Math.max(d.life, 2.5); }
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------ step shots */
+function stepShots(dt) {
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i];
+    if (shots.indexOf(s) < 0) continue;
+    s.t += dt;
+    const w = s.w;
+
+    switch (s.kind) {
+
+      /* ------------------------------------------------------------ lob */
+      case 'lob': {
+        trail(s, dt, w.holy ? [1, 0.95, 0.5] : [0.8, 0.78, 0.7], 0.02, w.holy ? 0.3 : 0.18);
+        if (w.holy && fx() < dt * 8) spawnPart(s.x, s.y + fr(0, 1), s.z, 0, fr(0.5, 2), 0, 1, 1, 0.6, 0.35, 0.8, -1);
+        s.fuse -= dt;
+        const hit = flyStep(s, dt);
+        if (hit === 'void') { killShot(s); break; }
+        if (hit === 'terrain') {
+          if (s.bounce > 0.05 && s.fuse > 0.12) bounceOff(s, s.bounce);
+          else detonate(s, false);
+          break;
+        }
+        if (hit) { detonate(s, hit); break; }
+        if (s.fuse <= 0) detonate(s, false);
+        break;
+      }
+
+      /* ------------------------------------------------------------ bee */
+      case 'bee': {
+        trail(s, dt, [1, 0.9, 0.2], 0.03, 0.13);
+        s.fuse -= dt;
+        if (!s.target || !s.target.alive) s.target = nearestUnitTo(s.x, s.y, s.z, s.team, true);
+        if (s.target) {
+          const tx = s.target.x - s.x, ty = s.target.y + 0.6 - s.y, tz = s.target.z - s.z;
+          const l = Math.hypot(tx, ty, tz) || 1;
+          const acc = 34;
+          s.vx += tx / l * acc * dt; s.vy += ty / l * acc * dt; s.vz += tz / l * acc * dt;
+          const sp = Math.hypot(s.vx, s.vy, s.vz);
+          if (sp > 17) { s.vx *= 17 / sp; s.vy *= 17 / sp; s.vz *= 17 / sp; }
+        }
+        const hit = flyStep(s, dt);
+        if (hit === 'void' || s.fuse <= 0) { detonate(s, false); break; }
+        if (hit) { detonate(s, hit !== 'terrain' ? hit : false); break; }
+        break;
+      }
+
+      /* --------------------------------------------------------- roller */
+      case 'roller': {
+        trail(s, dt, [1, 0.85, 0.25], 0.02, 0.24);
+        s.fuse -= dt;
+        if (!s.rolling) {
+          const hit = flyStep(s, dt);
+          if (hit === 'void') { killShot(s); break; }
+          if (hit === 'terrain') { s.rolling = true; s.vy = 0; sfx.engine(2); }
+          else if (hit) { detonate(s, hit); break; }
+        } else {
+          // roll downhill, melting a trench
+          const gx = (heightAt(Math.floor(s.x) + 1, Math.floor(s.z)) - heightAt(Math.floor(s.x) - 1, Math.floor(s.z)));
+          const gz = (heightAt(Math.floor(s.x), Math.floor(s.z) + 1) - heightAt(Math.floor(s.x), Math.floor(s.z) - 1));
+          s.vx += -clamp(gx, -6, 6) * 5.5 * dt;
+          s.vz += -clamp(gz, -6, 6) * 5.5 * dt;
+          const sp = Math.hypot(s.vx, s.vz);
+          if (sp < 3) { const a = fr(0, TAU); s.vx += Math.cos(a) * 4; s.vz += Math.sin(a) * 4; }
+          if (sp > 18) { s.vx *= 18 / sp; s.vz *= 18 / sp; }
+          s.x += s.vx * dt; s.z += s.vz * dt;
+          const h = heightAt(Math.floor(s.x), Math.floor(s.z));
+          s.y = h < 0 ? s.y - 22 * dt : lerp(s.y, h + 1.6, Math.min(1, dt * 9));
+          explode(s.x, s.y - 0.4, s.z, 2.1, { dmg: 26, knock: 9, owner: s.owner, scan: 1.1, noCrumble: true, noDebris: fx() > 0.4 });
+          if (fx() < dt * 30) paintShell(s.x, s.y - 1.4, s.z, 2.4, CHEESE);
+          const near = nearestUnitTo(s.x, s.y, s.z, s.team, true);
+          if (near && Math.hypot(near.x - s.x, near.y - s.y, near.z - s.z) < 2.0) { detonate(s, near); break; }
+          if (s.y < VOID_Y || s.fuse <= 0) { detonate(s, false); break; }
+        }
+        break;
+      }
+
+      /* --------------------------------------------------------- burrow */
+      case 'burrow': {
+        if (!s.dug) {
+          trail(s, dt, [0.9, 0.9, 0.92], 0.02, 0.16);
+          const hit = flyStep(s, dt);
+          if (hit === 'void') { killShot(s); break; }
+          if (hit === 'terrain') {
+            s.dug = true; s.digT = w.fuse;
+            const l = Math.hypot(s.vx, s.vy, s.vz) || 1;
+            s.dvx = s.vx / l; s.dvy = Math.min(-0.2, s.vy / l); s.dvz = s.vz / l;
+            sfx.tick(160, 0.4, 'sawtooth', 0.1);
+            toast('🦡 the badger is in the walls', false);
+          } else if (hit) { detonate(s, hit); }
+        } else {
+          s.digT -= dt;
+          // wander through the rock
+          s.dvx += fr(-2.4, 2.4) * dt; s.dvy += fr(-1.8, 1.8) * dt; s.dvz += fr(-2.4, 2.4) * dt;
+          const l = Math.hypot(s.dvx, s.dvy, s.dvz) || 1;
+          s.dvx /= l; s.dvy /= l; s.dvz /= l;
+          const spd = 11;
+          s.x += s.dvx * spd * dt; s.y += s.dvy * spd * dt; s.z += s.dvz * spd * dt;
+          explode(s.x, s.y, s.z, 1.5, { dmg: 8, knock: 3, owner: s.owner, scan: 1.1, noCrumble: true, noDebris: fx() > 0.25 });
+          if (fx() < dt * 24) spawnPart(s.x, s.y, s.z, fr(-2, 2), fr(0, 3), fr(-2, 2), 0.6, 0.5, 0.4, 0.28, 0.7, 2);
+          if (s.digT <= 0 || s.y < 1 || s.y > WY - 1) {
+            sfx.sneeze();
+            toast('🦡 BLESS YOU', true);
+            detonate(s, false);
+          }
+        }
+        break;
+      }
+
+      /* ----------------------------------------------------------- toad */
+      case 'toad': {
+        s.fuse -= dt;
+        const grounded = solidW(s.x, s.y - 0.35, s.z);
+        if (grounded && s.vy <= 0) {
+          s.vy = 0; s.vx *= 0.5; s.vz *= 0.5;
+          s.landT += dt;
+          if (fx() < dt * 3) sfx.tick(fr(180, 260), 0.1, 'square', 0.09);
+          if (s.landT > 0.45) {
+            s.landT = 0;
+            s.hopsLeft--;
+            if (s.hopsLeft <= 0) { toast('🐸 ribbit.', false); detonate(s, false); break; }
+            const tgt = nearestUnitTo(s.x, s.y, s.z, s.team, true);
+            let dx = fr(-1, 1), dz = fr(-1, 1);
+            if (tgt) { dx = tgt.x - s.x; dz = tgt.z - s.z; }
+            const l = Math.hypot(dx, dz) || 1;
+            s.vx = dx / l * fr(7, 12); s.vz = dz / l * fr(7, 12); s.vy = fr(9, 15);
+            s.y += 0.15;
+            sfx.boing();
+            smokePuff(s.x, s.y, s.z, 5, 2, [0.4, 0.8, 0.3], 0.2, 0.4);
+          }
+        } else {
+          const hit = flyStep(s, dt);
+          if (hit === 'void' || s.fuse <= 0) { detonate(s, false); break; }
+          if (hit && hit !== 'terrain') { detonate(s, hit); break; }
+          if (hit === 'terrain') { s.vy = Math.min(0, s.vy); s.y = Math.floor(s.y) + 1.02; }
+        }
+        break;
+      }
+
+      /* -------------------------------------------------------- grandma */
+      case 'grandma': {
+        trail(s, dt, [0.85, 0.6, 0.75], 0.02, 0.3);
+        const hit = flyStep(s, dt);
+        if (hit === 'void') { killShot(s); break; }
+        if (hit || s.y < 0.5) {
+          const n = s.bouncesLeft;
+          const R = w.r * (0.55 + 0.45 * n / 3);
+          explode(s.x, s.y, s.z, R, { dmg: w.dmg * (0.5 + 0.5 * n / 3), knock: 20, owner: s.owner, scorch: true });
+          sfx.boom(R / 5); sfx.yell(n < 2); addShake(1.0);
+          smokePuff(s.x, s.y, s.z, 50, R, [0.9, 0.6, 0.3], 0.4, 1.2);
+          s.bouncesLeft--;
+          if (s.bouncesLeft <= 0 || s.y < 0.5) { killShot(s); toast('👵 she is satisfied', false); break; }
+          s.y += 1.2; s.vy = 24 + fr(0, 6);
+          s.vx = fr(-9, 9); s.vz = fr(-9, 9);
+          toast('👵 SHE IS NOT DONE (' + s.bouncesLeft + ' left)', false);
+        }
+        break;
+      }
+
+      /* ---------------------------------------------------------- drill */
+      case 'drill': {
+        const spd = 30;
+        s.y += s.dir * spd * dt;
+        explode(s.x, s.y, s.z, w.r, { dmg: w.dmg * 0.35, knock: 18, owner: s.owner, scan: 1.1, noCrumble: true, noDebris: fx() > 0.5 });
+        if (fx() < dt * 40) smokePuff(s.x, s.y, s.z, 3, 5, [0.55, 0.55, 0.6], 0.5, 0.8);
+        addShake(0.24);
+        if (fx() < dt * 8) sfx.tick(fr(60, 110), 0.12, 'sawtooth', 0.1);
+        if ((s.dir < 0 && s.y < -8) || (s.dir > 0 && s.y > WY + 14)) {
+          s.passesLeft--;
+          if (s.passesLeft <= 0) {
+            killShot(s);
+            explode(s.x, clamp(s.y, 2, WY - 2), s.z, w.r * 1.4, { dmg: w.dmg, knock: 26, owner: s.owner, scorch: true });
+            sfx.boom(2.2); addShake(1.4);
+            toast('🗿 the locust is at rest', false);
+            break;
+          }
+          s.dir *= -1;
+          s.x += fr(-4, 4); s.z += fr(-4, 4);
+          sfx.horn(1.1);
+          toast('🗿 ...it is coming back (' + s.passesLeft + ')', true);
+        }
+        break;
+      }
+
+      /* ---------------------------------------------------------- mower */
+      case 'mower': {
+        s.life -= dt;
+        const gh = heightAt(Math.floor(s.x), Math.floor(s.z));
+        if (gh < 0) { s.vy -= GRAV * dt; s.y += s.vy * dt; }
+        else { s.y = lerp(s.y, gh + 1.0, Math.min(1, dt * 10)); s.vy = 0; }
+        s.x += s.vx * dt; s.z += s.vz * dt;
+        s.rot = (s.rot || 0) + dt * 22;
+        // shave the top layers in a swath
+        for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
+          if (Math.hypot(dx, dz) > 2.6) continue;
+          const px = Math.floor(s.x + dx), pz = Math.floor(s.z + dz);
+          const t = heightAt(px, pz);
+          if (t < 0 || t > s.y + 2.2) continue;
+          for (let k = 0; k < 3; k++) {
+            const yy = t - k;
+            if (yy < 0) break;
+            if (getV(px, yy, pz) === AIR) continue;
+            const m = getV(px, yy, pz);
+            vox[px + WX * (pz + WZ * yy)] = AIR;
+            if (fx() < 0.3) spawnDebris(px + .5, yy + .5, pz + .5, fr(-4, 4), fr(4, 10), fr(-4, 4), m, 0.5);
+          }
+          dirtyAround(px, clamp(t, 0, WY - 1), pz);
+        }
+        for (const u of units) {
+          if (!u.alive) continue;
+          if (Math.hypot(u.x - s.x, u.y + 0.4 - s.y, u.z - s.z) < 2.4) {
+            hurt(u, Math.round(w.dmg * dt * 3), s.owner);
+            u.vy += 22 * dt * 8; u.vx += fr(-3, 3); u.vz += fr(-3, 3);
+            u.grounded = false;
+          }
+        }
+        if (fx() < dt * 30) spawnPart(s.x, s.y + 0.4, s.z, fr(-6, 6), fr(2, 8), fr(-6, 6), 0.4, 0.8, 0.2, 0.24, 0.6, 4);
+        if (s.life <= 0 || s.y < VOID_Y || s.x < 0 || s.z < 0 || s.x > WX || s.z > WZ) {
+          killShot(s);
+          if (s.y > VOID_Y) {
+            explode(s.x, s.y, s.z, w.r, { dmg: w.dmg, knock: 15, owner: s.owner, scorch: true });
+            sfx.boom(1.1); addShake(0.6);
+            toast('🌀 the mower has gone to a better place', false);
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+
+/* --------------------------------------------------- projectile rendering */
+function drawShots(t) {
+  for (const s of shots) {
+    const c = s.col || [1, 1, 1];
+    const sz = s.size;
+    switch (s.kind) {
+      case 'grandma':
+        cube(s.x, s.y, s.z, 1.2, 1.5, 1.0, 0.55, 0.25, 0.45, t * 3);
+        cube(s.x, s.y + 1.1, s.z, 0.8, 0.8, 0.8, 0.95, 0.78, 0.65, t * 3);
+        cube(s.x, s.y + 1.6, s.z, 1.0, 0.4, 1.0, 0.85, 0.85, 0.9, t * 3);
+        break;
+      case 'drill':
+        for (let i = 0; i < 5; i++)
+          cube(s.x, s.y + i * 1.4 * -s.dir, s.z, 3.2 - i * 0.45, 1.3, 3.2 - i * 0.45,
+            0.5 + i * 0.03, 0.5 + i * 0.03, 0.53, t * 4 + i);
+        cube(s.x, s.y + 2.4 * -s.dir, s.z, 1.2, 1.2, 3.6, 0.42, 0.42, 0.45, t * 4);
+        break;
+      case 'mower':
+        cube(s.x, s.y, s.z, 1.9, 0.8, 1.4, 0.85, 0.12, 0.12, Math.atan2(s.vz, s.vx));
+        cube(s.x, s.y + 0.6, s.z, 1.0, 0.5, 1.0, 0.2, 0.2, 0.22, Math.atan2(s.vz, s.vx));
+        cube(s.x, s.y - 0.45, s.z, 2.6, 0.16, 2.6, 0.75, 0.75, 0.8, s.rot || 0);
+        break;
+      case 'roller':
+        cube(s.x, s.y, s.z, 2.2, 2.2, 1.5, 1, 0.84, 0.2, t * 9);
+        cube(s.x, s.y, s.z, 1.5, 1.5, 1.7, 0.95, 0.76, 0.12, t * 9);
+        break;
+      case 'toad':
+        cube(s.x, s.y + 0.3, s.z, 1.0, 0.7, 0.9, 0.3, 0.8, 0.28, Math.atan2(s.vz, s.vx));
+        cube(s.x, s.y + 0.72, s.z, 0.32, 0.3, 0.7, 0.95, 0.95, 0.2, Math.atan2(s.vz, s.vx));
+        break;
+      case 'burrow':
+        if (s.dug) break;
+        cube(s.x, s.y, s.z, 0.9, 0.6, 0.6, 0.9, 0.9, 0.92, t * 6);
+        cube(s.x, s.y, s.z, 0.5, 0.7, 0.7, 0.15, 0.15, 0.17, t * 6);
+        break;
+      default:
+        cube(s.x, s.y, s.z, sz * 2, sz * 2, sz * 2, c[0], c[1], c[2], t * 5);
+        if (s.w && s.w.holy) {
+          cube(s.x, s.y + 0.85, s.z, 0.16, 0.5, 0.16, 1, 0.95, 0.4, 0);
+          cube(s.x, s.y + 0.95, s.z, 0.42, 0.16, 0.16, 1, 0.95, 0.4, 0);
+        }
+    }
+  }
+}
+
+
+/* ==================================================== 12  the enemy swarm */
+
+const DIFFS = [
+  { id: 'chill',    label: 'Chill',     err: 0.150, moveP: 0.55, big: 0.25 },
+  { id: 'mean',     label: 'Mean',      err: 0.070, moveP: 0.75, big: 0.55 },
+  { id: 'unhinged', label: 'Unhinged',  err: 0.022, moveP: 0.92, big: 0.90 }
+];
+let diff = DIFFS[1];
+
+/**
+ * Solve a ballistic launch direction from a->b at a given speed.
+ * Returns a unit direction, or null when the target is simply out of reach.
+ */
+function solveLob(ax, ay, az, bx, by, bz, speed, high) {
+  const dx = bx - ax, dz = bz - az, dy = by - ay;
+  const g = GRAV;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.001) return { dx: 0, dy: 1, dz: 0, t: 2 * speed / g };
+  const v2 = speed * speed;
+  const disc = v2 * v2 - g * (g * d * d + 2 * dy * v2);
+  if (disc < 0) return null;
+  const root = Math.sqrt(disc);
+  const tanA = (v2 + (high ? root : -root)) / (g * d);
+  const ang = Math.atan(tanA);
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const t = d / (speed * ca);
+  return { dx: dx / d * ca, dy: sa, dz: dz / d * ca, t };
+}
+
+/** same, but iterate twice to cancel out the wind drift */
+function solveLobWind(ax, ay, az, bx, by, bz, speed, high, windMul) {
+  let tx = bx, tz = bz, sol = null;
+  for (let i = 0; i < 3; i++) {
+    sol = solveLob(ax, ay, az, tx, ty_(), tz, speed, high);
+    if (!sol) return null;
+    const drift = 0.5 * sol.t * sol.t * (windMul === undefined ? 1 : windMul);
+    tx = bx - windX * drift;
+    tz = bz - windZ * drift;
+  }
+  function ty_() { return by; }
+  return sol;
+}
+
+const ai = { on: false, list: [], i: 0, phase: 'done', t: 0, u: null, tgt: null, w: null, hops: 0, aimSol: null };
+
+function startAITurn() {
+  ai.on = true;
+  ai.list = units.filter(u => u.alive && u.team === turnTeam);
+  ai.i = 0; ai.phase = 'next'; ai.t = 0.7; ai.u = null;
+}
+
+function aiPickTarget(u) {
+  let best = null, bs = -1e9;
+  for (const v of units) {
+    if (!v.alive || v.team === u.team) continue;
+    const d = Math.hypot(v.x - u.x, v.y - u.y, v.z - u.z);
+    let s = 220 - d * 1.7 + (100 - v.hp) * 1.1;
+    if (v.y < 14) s += 25;                        // dangling over the void: finish them
+    s += fr(-18, 18) * (diff.err * 8);
+    if (s > bs) { bs = s; best = v; }
+  }
+  return best;
+}
+
+function aiPickWeapon(u, tgt) {
+  const d = Math.hypot(tgt.x - u.x, tgt.y - u.y, tgt.z - u.z);
+  const opts = [];
+  for (const w of WEAPONS) {
+    if (!haveAmmo(u.team, w)) continue;
+    let wt = 0;
+    switch (w.aim) {
+      case 'arc':   wt = d < 62 ? 1.0 : 0.15; break;
+      case 'point': wt = 1.5; break;
+      case 'look':  wt = d < 15 ? 1.6 : 0.02; break;
+      case 'none':  wt = (units.filter(x => x.alive && x.team === u.team).length > 2) ? 0.35 : 0.02; break;
+    }
+    if (w.kind === 'driver') wt = d < 42 && d > 8 ? 1.1 : 0.05;
+    if (w.kind === 'toad')   wt = d < 45 ? 1.3 : 0.1;
+    if (w.kind === 'tramp' || w.field === 'tramp') wt *= 0.15;
+    // bigger brains reach for the awful stuff
+    wt *= (1 - diff.big) + diff.big * clamp(w.dmg / 90, 0.15, 1.5);
+    if (ammo[u.team][w.id] > 0 && ammo[u.team][w.id] <= 1) wt *= 0.55 + diff.big;
+    if (wt > 0) opts.push({ w, wt });
+  }
+  if (!opts.length) return WBYID.egg;
+  let tot = 0; for (const o of opts) tot += o.wt;
+  let r = fx() * tot;
+  for (const o of opts) { r -= o.wt; if (r <= 0) return o.w; }
+  return opts[opts.length - 1].w;
+}
+
+function stepAI(dt) {
+  if (!ai.on) return;
+  ai.t -= dt;
+
+  switch (ai.phase) {
+    case 'next': {
+      if (ai.t > 0) break;
+      if (ai.i >= ai.list.length || turnClock <= 0) { ai.on = false; endTurn(); break; }
+      const u = ai.list[ai.i++];
+      if (!u.alive || u.shot) { ai.t = 0.05; break; }
+      ai.u = u; camFollow(u, false);
+      ai.tgt = aiPickTarget(u);
+      if (!ai.tgt) { ai.on = false; endTurn(); break; }
+      ai.w = aiPickWeapon(u, ai.tgt);
+      const d = Math.hypot(ai.tgt.x - u.x, ai.tgt.z - u.z);
+      ai.hops = (fx() < diff.moveP && d > 16 && u.moves > 0) ? Math.min(u.moves, ri(1, 3)) : 0;
+      ai.phase = ai.hops ? 'move' : 'aim';
+      ai.t = 0.75;
+      break;
+    }
+
+    case 'move': {
+      if (ai.t > 0) break;
+      const u = ai.u;
+      if (!u.alive) { ai.phase = 'next'; ai.t = 0.2; break; }
+      if (ai.hops <= 0 || u.moves <= 0) { ai.phase = 'aim'; ai.t = 0.8; break; }
+      if (!u.grounded) { ai.t = 0.12; break; }
+      let dx = ai.tgt.x - u.x, dz = ai.tgt.z - u.z;
+      const l = Math.hypot(dx, dz) || 1;
+      // close the gap, but keep some daylight so we do not blow ourselves up
+      const want = l > 26 ? 1 : -0.35;
+      hopUnit(u, dx / l * want, dz / l * want, fr(0.45, 0.95));
+      u.moves--; ai.hops--;
+      ai.t = 0.95;
+      break;
+    }
+
+    case 'aim': {
+      if (ai.t > 0) break;
+      const u = ai.u, tgt = ai.tgt, w = ai.w;
+      if (!u.alive || !tgt) { ai.phase = 'next'; ai.t = 0.3; break; }
+      const e = diff.err * (u.blind > 0 ? 6 : 1);
+      const jx = fr(-1, 1) * e * 22, jy = fr(-1, 1) * e * 14, jz = fr(-1, 1) * e * 22;
+      const tx = tgt.x + jx, ty = tgt.y + 0.5 + jy, tz = tgt.z + jz;
+
+      if (w.aim === 'point') {
+        ai.aimSol = { dx: 0, dy: -1, dz: 0, power: 1, px: tx, py: ty, pz: tz };
+      } else if (w.aim === 'look' || w.aim === 'none') {
+        const dx = tx - u.x, dy = ty - (u.y + 0.85), dz = tz - u.z;
+        const l = Math.hypot(dx, dy, dz) || 1;
+        ai.aimSol = { dx: dx / l, dy: dy / l, dz: dz / l, power: 1, px: tx, py: ty, pz: tz };
+      } else {
+        const power = fr(0.72, 1.0);
+        const speed = w.speed * (0.42 + 0.58 * power);
+        let sol = solveLobWind(u.x, u.y + 0.85, u.z, tx, ty, tz, speed, fx() < 0.55, 1);
+        if (!sol) sol = solveLobWind(u.x, u.y + 0.85, u.z, tx, ty, tz, w.speed, true, 1);
+        if (!sol) {
+          const dx = tx - u.x, dy = ty - u.y, dz = tz - u.z;
+          const l = Math.hypot(dx, dy, dz) || 1;
+          sol = { dx: dx / l, dy: Math.max(0.35, dy / l), dz: dz / l };
+        }
+        ai.aimSol = { dx: sol.dx, dy: sol.dy, dz: sol.dz, power, px: tx, py: ty, pz: tz };
+      }
+      u.yaw = Math.atan2(ai.aimSol.dz, ai.aimSol.dx);
+      ai.phase = 'fire'; ai.t = 0.55;
+      break;
+    }
+
+    case 'fire': {
+      if (ai.t > 0) break;
+      const u = ai.u, w = ai.w;
+      if (u.alive) {
+        toast(TEAMNAME[u.team] + ': ' + u.name + ' → ' + w.em + ' ' + w.name, false);
+        fireWeapon(u, w, ai.aimSol);
+        useAmmo(u.team, w);
+        u.shot = true; u.moves = 0;
+        if (u.blind > 0) u.blind--;
+      }
+      ai.phase = 'settle'; ai.t = 9.5;
+      break;
+    }
+
+    case 'settle': {
+      const quiet = shots.length === 0 && fields.length === 0;
+      if (quiet && ai.t < 8.4) { ai.phase = 'next'; ai.t = 0.5; refreshRoster(); break; }
+      if (ai.t <= 0) { ai.phase = 'next'; ai.t = 0.4; refreshRoster(); }
+      break;
+    }
+  }
+}
+
+
+/* ================================================= 13  camera + projection */
+
+const Q = { dpr: 2, far: 260, parts: 1, name: 'High' };
+const QUALS = [
+  { dpr: 1.0, far: 150, parts: 0.5, name: 'Potato' },
+  { dpr: 1.5, far: 200, parts: 0.8, name: 'Fine' },
+  { dpr: 2.0, far: 260, parts: 1.0, name: 'Lush' }
+];
+
+const cam = {
+  fx: WX / 2, fy: 30, fz: WZ / 2,      // smoothed focus
+  tx: WX / 2, ty: 30, tz: WZ / 2,      // desired focus
+  yaw: 0.9, pitch: -0.30, dist: 13, curDist: 13,
+  ex: 0, ey: 0, ez: 0,                 // eye
+  dx: 0, dy: 0, dz: 0,                 // forward
+  shakeX: 0, shakeY: 0, snap: false
+};
+const matP = new Float32Array(16), matV = new Float32Array(16), matVP = new Float32Array(16);
+
+function camFollow(u, snap) {
+  if (!u) return;
+  cam.tx = u.x; cam.ty = u.y + 1.1; cam.tz = u.z;
+  if (snap) { cam.fx = cam.tx; cam.fy = cam.ty; cam.fz = cam.tz; }
+}
+
+function updateCamera(dt) {
+  const k = cam.snap ? 1 : Math.min(1, dt * 7.5);
+  cam.snap = false;
+  cam.fx = lerp(cam.fx, cam.tx, k);
+  cam.fy = lerp(cam.fy, cam.ty, k);
+  cam.fz = lerp(cam.fz, cam.tz, k);
+
+  cam.pitch = clamp(cam.pitch, -1.35, 1.25);
+  const cp = Math.cos(cam.pitch);
+  cam.dx = cp * Math.cos(cam.yaw);
+  cam.dy = Math.sin(cam.pitch);
+  cam.dz = cp * Math.sin(cam.yaw);
+
+  // keep the camera out of the scenery, but ease the pull-in so it never
+  // slams the lens into a grasshopper's face
+  let want = cam.dist;
+  const hit = raycast(cam.fx, cam.fy + 0.4, cam.fz, -cam.dx, -cam.dy, -cam.dz, cam.dist + 1);
+  if (hit) want = Math.max(3.0, hit.dist - 0.6);
+  // walk the boom in until the lens is actually in open air
+  let buried = false;
+  for (let i = 0; i < 9; i++) {
+    if (!solidW(cam.fx - cam.dx * want, cam.fy - cam.dy * want, cam.fz - cam.dz * want)) break;
+    want -= cam.dist / 9;
+    if (want < 0.9) { want = 0.9; buried = true; break; }
+  }
+  cam.curDist = want < cam.curDist ? want : lerp(cam.curDist, want, Math.min(1, dt * 4));
+  const d = cam.curDist;
+
+  shake = Math.max(0, shake - dt * 3.0);
+  shakeT += dt * 42;
+  const sh = shake * shake * 0.55;
+  cam.shakeX = Math.sin(shakeT * 1.7) * sh;
+  cam.shakeY = Math.cos(shakeT * 2.3) * sh;
+
+  cam.ex = cam.fx - cam.dx * d + cam.shakeX;
+  cam.ey = Math.max(VOID_Y - 6, cam.fy - cam.dy * d + cam.shakeY);
+  cam.ez = cam.fz - cam.dz * d;
+  if (buried) {
+    // whoever we are watching is under a mountain — go overhead so the
+    // player can still see what on earth is happening to them
+    const surf = heightAt(Math.floor(cam.fx), Math.floor(cam.fz));
+    cam.ex = cam.fx + 1.6 + cam.shakeX;
+    cam.ey = Math.max(cam.fy + 4, surf + 5) + cam.shakeY;
+    cam.ez = cam.fz + 1.6;
+  }
+
+  m4persp(matP, 1.13, VW / VH, 0.22, Q.far);
+  m4look(matV, cam.ex, cam.ey, cam.ez, cam.fx, cam.fy, cam.fz, 0, 1, 0);
+  m4mul(matVP, matP, matV);
+  extractFrustum(matVP);
+}
+
+/** world -> screen pixels (CSS px). Returns null when behind the camera. */
+const _pv = new Float32Array(4);
+function project(x, y, z) {
+  const m = matVP;
+  const cw = m[3]*x + m[7]*y + m[11]*z + m[15];
+  if (cw <= 0.02) return null;
+  const cx = m[0]*x + m[4]*y + m[8]*z + m[12];
+  const cy = m[1]*x + m[5]*y + m[9]*z + m[13];
+  _pv[0] = (cx / cw * 0.5 + 0.5) * canvas.clientWidth;
+  _pv[1] = (0.5 - cy / cw * 0.5) * canvas.clientHeight;
+  _pv[2] = cw;
+  return _pv;
+}
+
+/** where is the player looking? used by strike weapons and the reticle */
+function aimPoint() {
+  const h = raycast(cam.ex, cam.ey, cam.ez, cam.dx, cam.dy, cam.dz, 220);
+  if (h) return { x: h.x + 0.5, y: h.y + 0.5, z: h.z + 0.5, hit: true, d: h.dist };
+  return { x: cam.ex + cam.dx * 70, y: cam.ey + cam.dy * 70, z: cam.ez + cam.dz * 70, hit: false, d: 70 };
+}
+
+/* ================================================= 14  floaters + nameplates */
+
+const layer = document.createElement('div');
+layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden';
+document.body.appendChild(layer);
+
+const floaters = [];
+function floater(x, y, z, text, col, life) {
+  const el = document.createElement('div');
+  el.textContent = text;
+  el.style.cssText = 'position:absolute;font:bold 15px/1 "Trebuchet MS",system-ui;' +
+    'text-shadow:0 2px 3px #000,0 0 6px #000;white-space:nowrap;transform:translate(-50%,-50%);color:' + (col || '#fff');
+  layer.appendChild(el);
+  floaters.push({ el, x, y, z, t: 0, life: life || 1.3 });
+}
+function stepFloaters(dt) {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.t += dt; f.y += dt * 1.15;
+    if (f.t >= f.life) { f.el.remove(); floaters.splice(i, 1); continue; }
+    const p = project(f.x, f.y, f.z);
+    if (!p) { f.el.style.display = 'none'; continue; }
+    f.el.style.display = '';
+    f.el.style.left = p[0] + 'px';
+    f.el.style.top = p[1] + 'px';
+    f.el.style.opacity = String(clamp(1 - f.t / f.life * 1.15, 0, 1));
+  }
+}
+
+const plates = [];
+function ensurePlates(n) {
+  while (plates.length < n) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;' +
+      'font:bold 11px/1.25 "Trebuchet MS",system-ui;white-space:nowrap;text-shadow:0 1px 2px #000';
+    el.innerHTML = '<span class="nm"></span><div style="width:44px;height:5px;background:#000a;' +
+      'border:1px solid #0008;border-radius:3px;margin:2px auto 0;overflow:hidden">' +
+      '<div class="hb" style="height:100%;width:100%"></div></div>';
+    layer.appendChild(el);
+    plates.push({ el, nm: el.querySelector('.nm'), hb: el.querySelector('.hb') });
+  }
+}
+function drawPlates() {
+  ensurePlates(units.length);
+  let i = 0;
+  for (const u of units) {
+    const P = plates[i++];
+    if (!u.alive) { P.el.style.display = 'none'; continue; }
+    const p = project(u.x, u.y + 2.0, u.z);
+    if (!p || p[2] > 110) { P.el.style.display = 'none'; continue; }
+    P.el.style.display = '';
+    P.el.style.left = p[0] + 'px';
+    P.el.style.top = p[1] + 'px';
+    const scale = clamp(1.25 - p[2] / 90, 0.6, 1.1);
+    P.el.style.opacity = String(clamp(1.4 - p[2] / 90, 0.25, 1));
+    P.el.style.fontSize = (11 * scale) + 'px';
+    const c = u.team === TEAM_A ? '#b6ff3b' : '#ff5fa8';
+    P.nm.textContent = (u === selected ? '▸ ' : '') + u.name + (u.blind > 0 ? ' 😵' : '');
+    P.nm.style.color = u === selected ? '#fff' : c;
+    P.hb.style.width = (u.hp / u.maxhp * 100) + '%';
+    P.hb.style.background = u.hp > 60 ? c : u.hp > 30 ? '#ffd23f' : '#ff4d2e';
+  }
+  for (; i < plates.length; i++) plates[i].el.style.display = 'none';
+}
+
+/* ==================================================== 15  input (touch first) */
+
+const keys = {};
+const stickEl = document.getElementById('stick');
+const knobEl = document.getElementById('stickknob');
+let jx = 0, jy = 0;
+let stickId = -1;
+const lookers = new Map();     // pointerId -> {x,y}
+let pinchBase = 0, pinchDist0 = 0;
+let firing = false, firePower = 0, fireT = 0;
+let tapCandidate = null;
+
+function screenDir() {
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const fxx = cy, fzz = sy;            // camera forward, flattened
+  const rxx = -sy, rzz = cy;           // camera right
+  let dx = fxx * (-jy) + rxx * jx;
+  let dz = fzz * (-jy) + rzz * jx;
+  return { x: dx, z: dz, m: Math.hypot(dx, dz) };
+}
+
+function setKnob(x, y) {
+  knobEl.style.left = (50 + x * 34) + '%';
+  knobEl.style.top = (50 + y * 34) + '%';
+}
+
+stickEl.addEventListener('pointerdown', e => {
+  e.preventDefault(); stickId = e.pointerId;
+  stickEl.setPointerCapture(e.pointerId);
+  stickMove(e);
+});
+stickEl.addEventListener('pointermove', e => { if (e.pointerId === stickId) { e.preventDefault(); stickMove(e); } });
+function stickEnd(e) {
+  if (e.pointerId !== stickId) return;
+  stickId = -1; jx = 0; jy = 0; setKnob(0, 0);
+}
+stickEl.addEventListener('pointerup', stickEnd);
+stickEl.addEventListener('pointercancel', stickEnd);
+function stickMove(e) {
+  const r = stickEl.getBoundingClientRect();
+  let x = (e.clientX - r.left - r.width / 2) / (r.width / 2);
+  let y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+  const m = Math.hypot(x, y);
+  if (m > 1) { x /= m; y /= m; }
+  jx = x; jy = y; setKnob(x, y);
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  audioInit(); resumeAudio();
+  lookers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+  canvas.setPointerCapture(e.pointerId);
+  if (lookers.size === 2) {
+    const it = [...lookers.values()];
+    pinchDist0 = Math.hypot(it[0].x - it[1].x, it[0].y - it[1].y);
+    pinchBase = cam.dist;
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  const L = lookers.get(e.pointerId);
+  if (!L) return;
+  e.preventDefault();
+  const dx = e.clientX - L.x, dy = e.clientY - L.y;
+  L.x = e.clientX; L.y = e.clientY;
+  if (lookers.size === 2) {
+    const it = [...lookers.values()];
+    const d = Math.hypot(it[0].x - it[1].x, it[0].y - it[1].y);
+    if (pinchDist0 > 8) cam.dist = clamp(pinchBase * (pinchDist0 / Math.max(8, d)), 3.5, 46);
+    return;
+  }
+  const sc = 0.0052 * (firing ? 0.45 : 1);
+  cam.yaw += dx * sc;
+  cam.pitch -= dy * sc;
+});
+function lookEnd(e) {
+  const L = lookers.get(e.pointerId);
+  if (!L) return;
+  lookers.delete(e.pointerId);
+  const moved = Math.hypot(e.clientX - L.sx, e.clientY - L.sy);
+  const quick = performance.now() - L.t < 300;
+  if (moved < 12 && quick) tryTapSelect(e.clientX, e.clientY);
+}
+canvas.addEventListener('pointerup', lookEnd);
+canvas.addEventListener('pointercancel', lookEnd);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.dist = clamp(cam.dist * (1 + Math.sign(e.deltaY) * 0.12), 3.5, 46);
+}, { passive: false });
+
+function tryTapSelect(sx, sy) {
+  if (!playerControl()) return;
+  let best = null, bd = 70;
+  for (const u of units) {
+    if (!u.alive || u.team !== playerTeam) continue;
+    const p = project(u.x, u.y + 0.8, u.z);
+    if (!p) continue;
+    const d = Math.hypot(p[0] - sx, p[1] - sy);
+    if (d < bd) { bd = d; best = u; }
+  }
+  if (best) selectUnit(best);
+}
+
+/* ---------------------------------------------------------------- buttons */
+const hopBtn = document.getElementById('hopbtn');
+const fireBtn = document.getElementById('firebtn');
+let hopHeld = false, hopT = 0;
+
+hopBtn.addEventListener('pointerdown', e => { e.preventDefault(); audioInit(); resumeAudio(); hopHeld = true; hopT = 0; });
+const hopRelease = e => {
+  if (!hopHeld) return;
+  hopHeld = false;
+  doHop(clamp(hopT / 0.85, 0, 1));
+};
+hopBtn.addEventListener('pointerup', hopRelease);
+hopBtn.addEventListener('pointercancel', hopRelease);
+hopBtn.addEventListener('pointerleave', hopRelease);
+
+fireBtn.addEventListener('pointerdown', e => { e.preventDefault(); audioInit(); resumeAudio(); startFire(); });
+const fireRelease = e => { if (firing) releaseFire(); };
+fireBtn.addEventListener('pointerup', fireRelease);
+fireBtn.addEventListener('pointercancel', fireRelease);
+fireBtn.addEventListener('pointerleave', fireRelease);
+
+window.addEventListener('keydown', e => {
+  if (e.repeat) { return; }
+  keys[e.code] = true;
+  audioInit(); resumeAudio();
+  if (e.code === 'Space') { e.preventDefault(); hopHeld = true; hopT = 0; }
+  if (e.code === 'Enter') { e.preventDefault(); startFire(); }
+  if (e.code === 'Tab') { e.preventDefault(); cycleUnit(1); }
+  if (e.code === 'KeyQ') swarmFire();
+  if (e.code === 'KeyR') rally();
+  if (e.code === 'KeyE') { if (playerControl()) endTurn(); }
+  if (e.code === 'KeyM') { muted = !muted; toast(muted ? '🔇 muted' : '🔊 unmuted', false); }
+  if (/^Digit[1-9]$/.test(e.code)) selectWeapon(parseInt(e.code.slice(5), 10) - 1);
+});
+window.addEventListener('keyup', e => {
+  keys[e.code] = false;
+  if (e.code === 'Space') hopRelease(e);
+  if (e.code === 'Enter' && firing) releaseFire();
+});
+window.addEventListener('mousedown', e => {
+  if (e.target === canvas && e.button === 0 && !firing && keys.ShiftLeft) startFire();
+});
+window.addEventListener('contextmenu', e => { if (e.target === canvas) e.preventDefault(); });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('visibilitychange', () => { if (document.hidden) { hopHeld = false; if (firing) firing = false; } });
+
+
+/* ============================================ 16  match state + HUD + turns */
+
+const TURN_TIME = 62;
+const SD_ROUND = 9;
+
+let playerTeam = TEAM_A;
+let turnTeam = TEAM_A;
+let turnClock = TURN_TIME;
+let round = 1;
+let turnState = 'menu';          // menu | play | settle | over
+let settleT = 0;
+let selected = null;
+let curWeapon = 0;
+let slimeY = 0;
+let squadSize = 5;
+let stats = [{ kills: 0, lost: 0 }, { kills: 0, lost: 0 }];
+const crates = [];
+const volley = [];
+let seedText = '';
+
+const $ = id => document.getElementById(id);
+const elTurnWho = $('turnwho'), elClock = $('clock'), elRound = $('roundlbl');
+const elWindTxt = $('windtxt'), elWindFill = $('windfill'), elAlive = $('alivetxt');
+const elRoster = $('roster'), elWepRow = $('weprow'), elToasts = $('toasts');
+const elPowerWrap = $('powerwrap'), elPowerFill = $('powerfill'), elRetic = $('retic');
+
+function playerControl() { return turnState === 'play' && turnTeam === playerTeam && !ai.on; }
+function aliveOf(t) { return units.filter(u => u.alive && u.team === t); }
+
+/* ------------------------------------------------------------------ toasts */
+function toast(text, big) {
+  const d = document.createElement('div');
+  d.className = 'toast' + (big ? ' big' : '');
+  d.textContent = text;
+  elToasts.appendChild(d);
+  while (elToasts.children.length > 4) elToasts.firstChild.remove();
+  setTimeout(() => {
+    d.style.transition = 'opacity .4s'; d.style.opacity = '0';
+    setTimeout(() => d.remove(), 420);
+  }, big ? 2600 : 1900);
+}
+
+/* ------------------------------------------------------------------ roster */
+function refreshRoster() {
+  elRoster.innerHTML = '';
+  for (const u of units) {
+    if (u.team !== playerTeam) continue;
+    const d = document.createElement('div');
+    d.className = 'pip' + (u === selected ? ' sel' : '') +
+      (!u.alive ? ' dead' : (u.shot && u.moves <= 0 ? ' spent' : ''));
+    d.innerHTML = '<span class="pipname">' + u.name.slice(0, 3) + '</span>' +
+      '<span class="pipbar"><span class="pipfill" style="width:' + (u.hp / u.maxhp * 100) +
+      '%;background:' + (u.hp > 60 ? '#b6ff3b' : u.hp > 30 ? '#ffd23f' : '#ff4d2e') + '"></span></span>' +
+      '<span>' + (u.shot ? '✔' : u.moves) + '</span>';
+    d.addEventListener('click', () => selectUnit(u));
+    elRoster.appendChild(d);
+  }
+  const a = aliveOf(TEAM_A).length, b = aliveOf(TEAM_B).length;
+  elAlive.innerHTML = '<span style="color:#b6ff3b">🦗' + a + '</span> vs <span style="color:#ff5fa8">' + b + '🦗</span>';
+}
+
+/* ----------------------------------------------------------------- weapons */
+function buildWeaponBar() {
+  elWepRow.innerHTML = '';
+  WEAPONS.forEach((w, i) => {
+    const d = document.createElement('div');
+    d.className = 'wep';
+    d.dataset.i = String(i);
+    d.innerHTML = '<span class="em">' + w.em + '</span>' + (w.tag || w.name) +
+      '<div class="ammo"></div>';
+    d.addEventListener('click', () => selectWeapon(i));
+    elWepRow.appendChild(d);
+  });
+  refreshWeapons();
+}
+function refreshWeapons() {
+  const kids = elWepRow.children;
+  for (let i = 0; i < kids.length; i++) {
+    const w = WEAPONS[i], n = ammo[playerTeam][w.id];
+    kids[i].className = 'wep' + (i === curWeapon ? ' sel' : '') + (n === 0 ? ' out' : '');
+    kids[i].querySelector('.ammo').textContent = n < 0 ? '∞' : ('x' + n);
+  }
+}
+function selectWeapon(i) {
+  if (i < 0 || i >= WEAPONS.length) return;
+  curWeapon = i;
+  const w = WEAPONS[i];
+  refreshWeapons();
+  toast(w.em + ' ' + w.name + ' — ' + w.blurb, false);
+  sfx.tick(700, 0.05, 'square', 0.07);
+  const el = elWepRow.children[i];
+  if (el) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+}
+
+/* -------------------------------------------------------------- selection */
+function selectUnit(u) {
+  if (!u || !u.alive) return;
+  selected = u;
+  camFollow(u, false);
+  refreshRoster();
+  sfx.tick(520, 0.05, 'triangle', 0.06);
+}
+function cycleUnit(dir) {
+  const mine = aliveOf(playerTeam);
+  if (!mine.length) return;
+  const fresh = mine.filter(u => !u.shot || u.moves > 0);
+  const pool = fresh.length ? fresh : mine;
+  let i = pool.indexOf(selected);
+  i = (i + (dir || 1) + pool.length) % pool.length;
+  selectUnit(pool[i]);
+}
+
+/* ------------------------------------------------------------- the actions */
+function doHop(power) {
+  if (!playerControl() || !selected || !selected.alive) return;
+  if (selected.moves <= 0) { toast(selected.name + ' is out of hops', false); return; }
+  if (!selected.grounded) return;
+  const d = screenDir();
+  if (!hopUnit(selected, d.x, d.z, power)) return;
+  selected.moves--;
+  refreshRoster();
+}
+
+function currentAim(u, power) {
+  const w = WEAPONS[curWeapon];
+  const p = aimPoint();
+  let dx = cam.dx, dy = cam.dy, dz = cam.dz;
+  if (u && u !== selected) {
+    // swarm members solve their own arc to the same spot
+    if (w.aim === 'arc') {
+      const speed = w.speed * (0.42 + 0.58 * power);
+      const sol = solveLobWind(u.x, u.y + 0.85, u.z, p.x, p.y, p.z, speed, true, 1) ||
+                  solveLobWind(u.x, u.y + 0.85, u.z, p.x, p.y, p.z, w.speed, true, 1);
+      if (sol) { dx = sol.dx; dy = sol.dy; dz = sol.dz; }
+    } else if (w.aim === 'look') {
+      const ex = p.x - u.x, ey = p.y - (u.y + 0.85), ez = p.z - u.z;
+      const l = Math.hypot(ex, ey, ez) || 1;
+      dx = ex / l; dy = ey / l; dz = ez / l;
+    }
+  }
+  if (u && u.blind > 0) {
+    const e = 0.18;
+    dx += fr(-e, e); dy += fr(-e, e); dz += fr(-e, e);
+    const l = Math.hypot(dx, dy, dz) || 1; dx /= l; dy /= l; dz /= l;
+  }
+  return { dx, dy, dz, power, px: p.x, py: p.y, pz: p.z };
+}
+
+function canShoot(u) { return u && u.alive && !u.shot; }
+
+function startFire() {
+  if (!playerControl() || !canShoot(selected)) return;
+  const w = WEAPONS[curWeapon];
+  if (!haveAmmo(playerTeam, w)) { toast('no ' + w.name + ' left', false); return; }
+  firing = true; firePower = 0; fireT = 0;
+  elPowerWrap.classList.add('show');
+}
+function releaseFire() {
+  firing = false;
+  elPowerWrap.classList.remove('show');
+  if (!playerControl() || !canShoot(selected)) return;
+  const w = WEAPONS[curWeapon];
+  if (!haveAmmo(playerTeam, w)) return;
+  const aim = currentAim(selected, Math.max(0.1, firePower));
+  fireWeapon(selected, w, aim);
+  useAmmo(playerTeam, w);
+  selected.shot = true; selected.moves = 0;
+  if (selected.blind > 0) selected.blind--;
+  refreshWeapons(); refreshRoster();
+  firePower = 0;
+}
+
+/* ------------------------------------------------------- the swarm commands */
+function swarmFire() {
+  if (!playerControl()) return;
+  const w = WEAPONS[curWeapon];
+  const ready = aliveOf(playerTeam).filter(canShoot);
+  if (!ready.length) { toast('every grasshopper has already had a go', false); return; }
+  if (w.aim === 'none') { toast('that one is not a swarm weapon', false); return; }
+  const have = ammo[playerTeam][w.id];
+  const n = have < 0 ? ready.length : Math.min(ready.length, have);
+  if (n <= 0) { toast('no ' + w.name + ' left', false); return; }
+  const p = aimPoint();
+  const power = 0.9;
+  for (let i = 0; i < n; i++) {
+    volley.push({ u: ready[i], w, t: i * 0.14, px: p.x, py: p.y, pz: p.z, power });
+  }
+  useAmmo(playerTeam, w, n);
+  toast('🦗🦗 SWARM VOLLEY — ' + n + ' × ' + w.em + ' ' + w.name, true);
+  addShake(0.25);
+  refreshWeapons();
+}
+function stepVolley(dt) {
+  for (let i = volley.length - 1; i >= 0; i--) {
+    const v = volley[i];
+    v.t -= dt;
+    if (v.t > 0) continue;
+    volley.splice(i, 1);
+    const u = v.u;
+    if (!u.alive || u.shot) continue;
+    const w = v.w;
+    let dx, dy, dz;
+    if (w.aim === 'arc') {
+      const speed = w.speed * (0.42 + 0.58 * v.power);
+      const sol = solveLobWind(u.x, u.y + 0.85, u.z, v.px, v.py, v.pz, speed, true, 1) ||
+                  solveLobWind(u.x, u.y + 0.85, u.z, v.px, v.py, v.pz, w.speed, true, 1);
+      if (sol) { dx = sol.dx; dy = sol.dy; dz = sol.dz; }
+      else {
+        const ex = v.px - u.x, ey = v.py - u.y, ez = v.pz - u.z, l = Math.hypot(ex, ey, ez) || 1;
+        dx = ex / l; dy = Math.max(0.4, ey / l); dz = ez / l;
+      }
+    } else {
+      const ex = v.px - u.x, ey = v.py - (u.y + 0.85), ez = v.pz - u.z, l = Math.hypot(ex, ey, ez) || 1;
+      dx = ex / l; dy = ey / l; dz = ez / l;
+    }
+    fireWeapon(u, w, { dx, dy, dz, power: v.power, px: v.px, py: v.py, pz: v.pz });
+    u.shot = true; u.moves = 0;
+  }
+  if (volley.length === 0) refreshRoster();
+}
+
+function rally() {
+  if (!playerControl() || !selected) return;
+  let n = 0;
+  for (const u of aliveOf(playerTeam)) {
+    if (u === selected || u.moves <= 0 || !u.grounded) continue;
+    const dx = selected.x - u.x, dz = selected.z - u.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 2.5) continue;
+    hopUnit(u, dx / d, dz / d, clamp(d / 22, 0.35, 1));
+    u.moves--; n++;
+  }
+  if (n) { toast('📣 RALLY — ' + n + ' hopping to ' + selected.name, false); sfx.chirp(3); }
+  else toast('nobody able to rally', false);
+  refreshRoster();
+}
+
+/* ------------------------------------------------------------------ crates */
+function dropCrates(n) {
+  const cand = spawnCandidates();
+  if (!cand.length) return;
+  for (let i = 0; i < n; i++) {
+    const p = cand[Math.floor(fx() * cand.length)];
+    const health = fx() < 0.34;
+    const w = WEAPONS[Math.floor(fx() * WEAPONS.length)];
+    crates.push({ x: p.x, y: p.y + 12, z: p.z, vy: 0, health, w, t: 0 });
+  }
+  toast('📦 supplies incoming', false);
+}
+function stepCrates(dt) {
+  for (let i = crates.length - 1; i >= 0; i--) {
+    const c = crates[i];
+    c.t += dt;
+    if (!solidW(c.x, c.y - 0.4, c.z)) { c.vy -= GRAV * 0.45 * dt; c.y += c.vy * dt; }
+    else { c.vy = 0; c.y = Math.floor(c.y) + 0.5; }
+    if (c.y < VOID_Y) { crates.splice(i, 1); continue; }
+    for (const u of units) {
+      if (!u.alive) continue;
+      if (Math.hypot(u.x - c.x, u.y + 0.5 - c.y, u.z - c.z) > 1.5) continue;
+      if (c.health) {
+        u.hp = Math.min(u.maxhp, u.hp + 45);
+        floater(u.x, u.y + 1.9, u.z, '+45 ❤', '#7dff8a', 1.8);
+        toast('❤ ' + u.name + ' patched up', false);
+      } else {
+        if (ammo[u.team][c.w.id] >= 0) ammo[u.team][c.w.id] += 2;
+        floater(u.x, u.y + 1.9, u.z, '+2 ' + c.w.em, '#ffe066', 1.8);
+        toast('📦 ' + TEAMNAME[u.team] + ' picked up ' + c.w.em + ' ' + c.w.name, false);
+      }
+      sfx.fanfare();
+      crates.splice(i, 1);
+      refreshWeapons(); refreshRoster();
+      break;
+    }
+  }
+}
+
+/* ------------------------------------------------------------- turn engine */
+function beginTurn(team) {
+  turnTeam = team;
+  turnClock = TURN_TIME;
+  turnState = 'play';
+  rollWind();
+  for (const u of units) {
+    if (u.team !== team) continue;
+    u.moves = HOP_MOVES; u.shot = false;
+  }
+  if (team === playerTeam) {
+    const mine = aliveOf(playerTeam);
+    selectUnit(mine[0]);
+    cam.snap = false;
+    toast('🦗 YOUR SWARM — move and shoot with every one of them', true);
+    ai.on = false;
+  } else {
+    toast('☠ ' + TEAMNAME[team] + ' is thinking…', false);
+    startAITurn();
+  }
+  refreshRoster(); refreshWeapons(); updateHUD();
+}
+
+function endTurn() {
+  if (turnState !== 'play') return;
+  turnState = 'settle';
+  settleT = 0;
+  firing = false;
+  elPowerWrap.classList.remove('show');
+}
+
+function settled() {
+  if (shots.length || volley.length || fields.length) return false;
+  for (const u of units) {
+    if (!u.alive) continue;
+    if (Math.abs(u.vy) > 3.5) return false;
+  }
+  return true;
+}
+
+function nextTurn() {
+  if (checkWin()) return;
+  const nt = 1 - turnTeam;
+  if (nt === playerTeam) {
+    round++;
+    if (round === SD_ROUND) {
+      slimeY = 6;
+      toast('☣ SUDDEN DEATH — the toxic tide is rising', true);
+      sfx.sad();
+    } else if (round > SD_ROUND) {
+      slimeY += 2.4;
+      markAllDirty();
+    }
+    if (round % 2 === 0) dropCrates(ri(1, 2));
+  }
+  beginTurn(nt);
+}
+
+function checkWin() {
+  const a = aliveOf(TEAM_A).length, b = aliveOf(TEAM_B).length;
+  if (a > 0 && b > 0) return false;
+  turnState = 'over';
+  const won = a > 0 && b === 0;
+  const draw = a === 0 && b === 0;
+  $('gtitle').textContent = draw ? 'MUTUAL\nANNIHILATION' : won ? 'SWARM\nVICTORY' : 'SQUASHED';
+  $('gsub').textContent = draw
+    ? 'Every single grasshopper is gone. Nobody is available for comment.'
+    : won ? 'The ' + TEAMNAME[playerTeam] + ' stands. Mostly.'
+          : 'The ' + TEAMNAME[1 - playerTeam] + ' will be insufferable about this.';
+  $('gstats').innerHTML =
+    'seed <b>' + seedText + '</b> · ' + biome.name + '<br>' +
+    'rounds survived: <b>' + round + '</b><br>' +
+    'your kills: <b>' + stats[playerTeam].kills + '</b> · losses: <b>' + stats[playerTeam].lost + '</b>';
+  $('gameover').classList.remove('hidden');
+  if (won) sfx.fanfare(); else sfx.sad();
+  return true;
+}
+
+/* --------------------------------------------------------------------- HUD */
+function updateHUD() {
+  elTurnWho.textContent = turnTeam === playerTeam ? 'YOUR SWARM' : TEAMNAME[turnTeam];
+  elTurnWho.style.color = turnTeam === TEAM_A ? '#b6ff3b' : '#ff5fa8';
+  const c = Math.max(0, Math.ceil(turnClock));
+  elClock.textContent = turnState === 'settle' ? '…' : (c + 's');
+  elClock.className = c <= 10 ? 'low' : '';
+  elRound.textContent = 'round ' + round + (slimeY > 0 ? ' ☣' : '');
+  const wm = Math.hypot(windX, windZ);
+  const arrow = windX > 1 ? '→' : windX < -1 ? '←' : '·';
+  elWindTxt.textContent = 'WIND ' + arrow + ' ' + wm.toFixed(1);
+  const w = clamp(windX / 7, -1, 1);
+  elWindFill.style.left = (w < 0 ? 50 + w * 50 : 50) + '%';
+  elWindFill.style.width = Math.abs(w) * 50 + '%';
+  const on = playerControl();
+  $('swarmbtn').disabled = !on;
+  $('rallybtn').disabled = !on;
+  $('nextbtn').disabled = !on;
+  $('endbtn').disabled = !on;
+  elRetic.classList.toggle('hidden', !on);
+  document.getElementById('stick').style.opacity = on ? '1' : '0.25';
+  document.getElementById('rightpad').style.opacity = on ? '1' : '0.25';
+}
+
+$('swarmbtn').addEventListener('click', swarmFire);
+$('rallybtn').addEventListener('click', rally);
+$('nextbtn').addEventListener('click', () => cycleUnit(1));
+$('endbtn').addEventListener('click', () => { if (playerControl()) endTurn(); });
+
+
+/* ============================================== 17  rendering a whole frame */
+
+const flashEl = document.createElement('div');
+flashEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:6;opacity:0;background:#fff';
+document.body.appendChild(flashEl);
+
+const clouds = [];
+for (let i = 0; i < 46; i++) {
+  clouds.push({
+    x: fr(-60, WX + 60), y: fr(WY + 4, WY + 30), z: fr(-60, WZ + 60),
+    sx: fr(6, 20), sy: fr(2.5, 6), sz: fr(5, 16), v: fr(0.6, 2.4)
+  });
+}
+
+const CHUNK_R = CS * 0.88;
+
+function drawInstances(alpha, tint) {
+  if (!instN) { instN = 0; return; }
+  gl.bindVertexArray(instVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, instData.subarray(0, instN * 10));
+  gl.useProgram(progInst.p);
+  gl.uniformMatrix4fv(progInst.u.uVP, false, matVP);
+  gl.uniform3f(progInst.u.uEye, cam.ex, cam.ey, cam.ez);
+  gl.uniform3fv(progInst.u.uFog, biome.fog);
+  gl.uniform2f(progInst.u.uFogRange, Q.far * 0.28, Q.far * 0.95);
+  gl.uniform1f(progInst.u.uAlpha, alpha === undefined ? 1 : alpha);
+  gl.uniform3f(progInst.u.uTint, tint ? tint[0] : 1, tint ? tint[1] : 1, tint ? tint[2] : 1);
+  gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, instN);
+  instN = 0;
+}
+
+function render(t) {
+  gl.viewport(0, 0, VW, VH);
+  gl.disable(gl.BLEND);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.clearColor(biome.fog[0], biome.fog[1], biome.fog[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // ---- sky
+  gl.depthMask(false);
+  gl.useProgram(progSky.p);
+  gl.uniform3fv(progSky.u.uTop, biome.skyTop);
+  gl.uniform3fv(progSky.u.uBot, biome.skyBot);
+  gl.uniform1f(progSky.u.uSunX, 0.78);
+  gl.uniform1f(progSky.u.uSunY, 0.82);
+  gl.bindVertexArray(skyVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.depthMask(true);
+
+  // ---- terrain
+  gl.useProgram(progChunk.p);
+  gl.uniformMatrix4fv(progChunk.u.uVP, false, matVP);
+  gl.uniform3f(progChunk.u.uEye, cam.ex, cam.ey, cam.ez);
+  gl.uniform3fv(progChunk.u.uFog, biome.fog);
+  gl.uniform2f(progChunk.u.uFogRange, Q.far * 0.28, Q.far * 0.95);
+  gl.uniform1f(progChunk.u.uAlpha, 1);
+  gl.uniform3f(progChunk.u.uTint, 1, 1, 1);
+  for (const c of chunks) {
+    if (!c.count) continue;
+    if (!sphereVisible(c.cxc, c.cyc, c.czc, CHUNK_R)) continue;
+    gl.bindVertexArray(c.vao);
+    gl.drawElements(gl.TRIANGLES, c.count, gl.UNSIGNED_INT, 0);
+  }
+
+  // ---- clouds
+  for (const c of clouds) cube(c.x, c.y, c.z, c.sx, c.sy, c.sz, 1, 1, 1, 0);
+
+  // ---- entities
+  for (const u of units) if (u.alive) drawUnit(u, u === selected, t);
+  drawShots(t);
+  for (const c of crates) {
+    const bob = Math.sin(t * 3 + c.x) * 0.09;
+    cube(c.x, c.y + bob, c.z, 1.0, 1.0, 1.0, c.health ? 0.9 : 0.75, c.health ? 0.2 : 0.55, c.health ? 0.25 : 0.2, t * 0.8);
+    cube(c.x, c.y + bob + 0.62, c.z, 0.34, 0.34, 0.34, 1, 1, 1, t * 2.2);
+  }
+  for (const d of debris) {
+    const m = d.mat * 3;
+    cube(d.x, d.y, d.z, d.size, d.size, d.size, MATCOL[m], MATCOL[m+1], MATCOL[m+2], d.rot);
+  }
+  for (const p of parts) {
+    const a = clamp(p.life / p.max, 0, 1);
+    const s = p.size * (0.35 + a * 0.9);
+    cube(p.x, p.y, p.z, s, s, s, p.r * (0.4 + a * 0.7), p.g * (0.4 + a * 0.7), p.b * (0.4 + a * 0.7), 0);
+  }
+
+  // ---- aiming aids
+  if (firing && selected && playerControl()) drawTrajectory();
+  if (playerControl() && WEAPONS[curWeapon].aim === 'point') {
+    const p = aimPoint();
+    for (let i = 0; i < 10; i++) {
+      const a = t * 2 + i / 10 * TAU;
+      cube(p.x + Math.cos(a) * 2.4, p.y + 0.4, p.z + Math.sin(a) * 2.4, 0.3, 0.3, 0.3, 1, 0.3, 0.2, 0);
+    }
+  }
+
+  drawInstances(1, null);
+
+  // ---- toxic tide
+  if (slimeY > 0) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    const wob = Math.sin(t * 1.4) * 0.12;
+    cube(WX / 2, slimeY + wob, WZ / 2, WX * 3, 0.4, WZ * 3, 0.32, 0.95, 0.28, 0);
+    drawInstances(0.62, null);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+  instN = 0;
+}
+
+function drawTrajectory() {
+  const w = WEAPONS[curWeapon];
+  if (w.aim !== 'arc') return;
+  const power = Math.max(0.1, firePower);
+  const sp = w.speed * (0.42 + 0.58 * power);
+  let x = selected.x + cam.dx * 0.9, y = selected.y + 0.85 + cam.dy * 0.9, z = selected.z + cam.dz * 0.9;
+  let vx = cam.dx * sp, vy = cam.dy * sp, vz = cam.dz * sp;
+  const h = 0.035;
+  for (let i = 0; i < 150; i++) {
+    vy -= GRAV * h; vx += windX * h; vz += windZ * h;
+    x += vx * h; y += vy * h; z += vz * h;
+    if (y < VOID_Y || x < -20 || x > WX + 20 || z < -20 || z > WZ + 20) break;
+    if (solidW(x, y, z)) {
+      for (let k = 0; k < 9; k++) {
+        const a = k / 9 * TAU;
+        cube(x + Math.cos(a) * w.r * 0.5, y, z + Math.sin(a) * w.r * 0.5, 0.22, 0.22, 0.22, 1, 0.35, 0.15, 0);
+      }
+      break;
+    }
+    if (i % 3 === 0) {
+      const f = 1 - i / 150;
+      cube(x, y, z, 0.14, 0.14, 0.14, 0.9, 0.95 * f + 0.05, 0.25, 0);
+    }
+  }
+}
+
+/* ================================================================ 18  loop */
+
+let lastT = performance.now();
+let hudT = 0;
+
+function update(dt, now) {
+  // menu attract mode
+  if (turnState === 'menu') {
+    cam.yaw += dt * 0.09;
+    cam.pitch = -0.28 + Math.sin(now * 0.00016) * 0.12;
+    cam.tx = WX / 2; cam.ty = 32; cam.tz = WZ / 2;
+    cam.dist = 88; cam.curDist = 88;
+    flushDirty(2);
+    stepParticles(dt);
+    return;
+  }
+
+  flushDirty(dirtyQ.length > 24 ? 8 : 4);
+
+  // keyboard drives the same virtual stick
+  if (stickId < 0) {
+    const kx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    const ky = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0);
+    if (kx || ky) { const l = Math.hypot(kx, ky); jx = kx / l; jy = ky / l; setKnob(jx, jy); }
+    else if (jx || jy) { jx = 0; jy = 0; setKnob(0, 0); }
+  }
+
+  if (hopHeld) {
+    hopT += dt;
+    if (hopT > 1.35) { hopHeld = false; doHop(1); }
+  }
+  if (firing) {
+    fireT += dt;
+    firePower = fireT < 1.15 ? fireT / 1.15 : (0.55 + 0.45 * Math.abs(Math.sin((fireT - 1.15) * 2.2)));
+    elPowerFill.style.width = (firePower * 100) + '%';
+  }
+
+  for (const u of units) stepUnit(u, dt);
+  stepShots(dt);
+  stepVolley(dt);
+  stepFields(dt);
+  stepCrates(dt);
+  stepParticles(dt);
+
+  // anti-gravity lifts the loose rubble too
+  if (fields.length) {
+    for (const d of debris) {
+      if (!d.floaty) continue;
+      d.vy += GRAV * 1.02 * dt;
+      d.vy = clamp(d.vy, -3, 3.2);
+      d.rest = 0;
+    }
+  }
+
+  if (turnState === 'play') {
+    turnClock -= dt;
+    if (turnTeam === playerTeam) {
+      if (selected && !selected.alive) {
+        const mine = aliveOf(playerTeam);
+        selected = mine.length ? mine[0] : null;
+        refreshRoster();
+      }
+      if (selected) camFollow(selected, false);
+      const done = aliveOf(playerTeam).every(u => u.shot);
+      if (done && !volley.length) endTurn();
+    } else {
+      stepAI(dt);
+      if (ai.u && ai.u.alive) camFollow(ai.u, false);
+    }
+    // let the camera chase the action
+    if (shots.length) {
+      let best = null, bs = -1;
+      for (const s of shots) {
+        const sc = (s.kind === 'drill' || s.kind === 'grandma' || s.kind === 'mower') ? 3 : 1;
+        if (sc > bs) { bs = sc; best = s; }
+      }
+      if (best) {
+        cam.tx = lerp(cam.tx, best.x, 0.55);
+        cam.ty = lerp(cam.ty, clamp(best.y, 3, WY + 8), 0.55);
+        cam.tz = lerp(cam.tz, best.z, 0.55);
+      }
+    }
+    if (turnClock <= 0) { toast('⏰ time', false); endTurn(); }
+  } else if (turnState === 'settle') {
+    settleT += dt;
+    if (settled() || settleT > 8) nextTurn();
+  }
+
+  if (slimeY > 0) {
+    for (const d of debris) if (d.y < slimeY) d.life = Math.min(d.life, 0.2);
+  }
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  resize();
+  update(dt, now);
+  updateCamera(dt);
+  render(now / 1000);
+  stepFloaters(dt);
+  if (turnState !== 'menu') drawPlates();
+  if (flash > 0) {
+    flash = Math.max(0, flash - dt * 2.6);
+    flashEl.style.opacity = String(flash * 0.7);
+    flashEl.style.background = 'rgb(' + (flashCol[0]*255|0) + ',' + (flashCol[1]*255|0) + ',' + (flashCol[2]*255|0) + ')';
+  } else if (flashEl.style.opacity !== '0') flashEl.style.opacity = '0';
+  hudT += dt;
+  if (hudT > 0.12) { hudT = 0; updateHUD(); }
+  requestAnimationFrame(frame);
+}
+
+/* ================================================================ 19  boot */
+
+function buildAll() {
+  for (const c of chunks) buildChunk(c);
+  dirtyQ.length = 0;
+}
+
+function placeArmies(n) {
+  units.length = 0;
+  const cand = spawnCandidates();
+  if (cand.length < n * 2 + 4) return false;
+  cand.sort((a, b) => a.x - b.x);
+  const cut = Math.floor(cand.length * 0.38);
+  let left = cand.slice(0, cut);
+  let right = cand.slice(cand.length - cut);
+  if (left.length < n || right.length < n) { left = cand.slice(0, cand.length >> 1); right = cand.slice(cand.length >> 1); }
+  const names = NAMES.slice();
+  for (let i = names.length - 1; i > 0; i--) { const j = ri(0, i); const t = names[i]; names[i] = names[j]; names[j] = t; }
+
+  const take = (pool, team) => {
+    const chosen = [];
+    let guard = 0;
+    while (chosen.length < n && guard++ < 4000) {
+      const p = pool[ri(0, pool.length - 1)];
+      if (chosen.some(c => Math.hypot(c.x - p.x, c.z - p.z) < 4.5)) continue;
+      chosen.push(p);
+    }
+    while (chosen.length < n) chosen.push(pool[ri(0, pool.length - 1)]);
+    chosen.forEach((p, i) => units.push(makeUnit(team, { x: p.x, y: p.y + 0.1, z: p.z },
+      names[(team * n + i) % names.length])));
+  };
+  take(left, TEAM_A);
+  take(right, TEAM_B);
+  return true;
+}
+
+function startGame(seed) {
+  seedText = seed;
+  $('gameover').classList.add('hidden');
+  shots.length = 0; parts.length = 0; debris.length = 0;
+  fields.length = 0; crates.length = 0; volley.length = 0;
+  for (const f of floaters) f.el.remove();
+  floaters.length = 0;
+  stats = [{ kills: 0, lost: 0 }, { kills: 0, lost: 0 }];
+  round = 1; slimeY = 0; curWeapon = 0;
+
+  let ok = false;
+  for (let attempt = 0; attempt < 6 && !ok; attempt++) {
+    generateWorld(attempt ? seed + '#' + attempt : seed);
+    ok = placeArmies(squadSize);
+  }
+  if (!ok) { generateWorld(seed + '!!'); placeArmies(Math.max(2, squadSize - 2)); }
+
+  buildAll();
+  resetAmmo();
+  buildWeaponBar();
+  cam.dist = 13; cam.curDist = 13;
+  cam.pitch = -0.34;
+  turnState = 'play';
+  $('menu').classList.add('hidden');
+  beginTurn(playerTeam);
+  cam.snap = true;
+  toast('📍 ' + biome.name, true);
+}
+
+/* ---------------------------------------------------------------- the menu */
+function randomSeed() {
+  const a = ['angry', 'damp', 'illegal', 'moist', 'wide', 'loud', 'crunchy', 'humid', 'vast', 'tiny', 'grim', 'silly'];
+  const b = ['thorax', 'picnic', 'mandible', 'lawn', 'kettle', 'badger', 'cheese', 'trebuchet', 'antenna', 'hedge'];
+  return a[Math.floor(Math.random() * a.length)] + '-' + b[Math.floor(Math.random() * b.length)] +
+         '-' + (Math.floor(Math.random() * 900) + 100);
+}
+
+function seg(host, items, get, set) {
+  host.innerHTML = '';
+  items.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (get() === i ? ' on' : '');
+    b.textContent = it;
+    b.addEventListener('click', () => { set(i); seg(host, items, get, set); });
+    host.appendChild(b);
+  });
+}
+
+let squadIdx = 1, diffIdx = 1, qualIdx = 1;
+const SQUADS = [3, 5, 8];
+
+function initMenu() {
+  $('seedin').value = randomSeed();
+  seg($('squadseg'), SQUADS.map(n => n + ' 🦗'), () => squadIdx, i => { squadIdx = i; squadSize = SQUADS[i]; });
+  seg($('diffseg'), DIFFS.map(d => d.label), () => diffIdx, i => { diffIdx = i; diff = DIFFS[i]; });
+  seg($('qualseg'), QUALS.map(q => q.name), () => qualIdx, i => {
+    qualIdx = i; Object.assign(Q, QUALS[i]); resize();
+  });
+  squadSize = SQUADS[squadIdx]; diff = DIFFS[diffIdx]; Object.assign(Q, QUALS[qualIdx]);
+
+  $('reseed').addEventListener('click', () => { $('seedin').value = randomSeed(); menuWorld(); });
+  $('playbtn').addEventListener('click', () => {
+    audioInit(); resumeAudio();
+    $('loadnote').textContent = 'carving an island…';
+    setTimeout(() => { startGame($('seedin').value.trim() || randomSeed()); $('loadnote').textContent = ''; }, 30);
+  });
+  $('againbtn').addEventListener('click', () => {
+    $('gameover').classList.add('hidden');
+    $('menu').classList.remove('hidden');
+    turnState = 'menu';
+    units.length = 0;
+    menuWorld();
+  });
+}
+
+function menuWorld() {
+  generateWorld($('seedin').value || randomSeed());
+  buildAll();
+  cam.yaw = fr(0, TAU);
+}
+
+initMenu();
+resize();
+menuWorld();
+turnState = 'menu';
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>

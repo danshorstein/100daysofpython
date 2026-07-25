@@ -2,6 +2,13 @@
 
 ## Projects
 
+- **[🦗 GRASSHOPPERS](Grasshoppers/)** — a Worms-like voxel artillery game,
+  except the island is a fully 3D procedurally generated destructible voxel
+  world, you command your *entire* swarm every turn instead of one worm at a
+  time, and the 17 weapons include an orbital grandmother, homing bees born
+  from exploding bananas, and a kettle that's a live grenade 60% of the time.
+  Hand-rolled WebGL2 renderer, no dependencies, mobile-friendly. Open
+  [Grasshoppers/index.html](Grasshoppers/index.html) to play.
 - **[🐍 SNAKE.BF](snake-brainfuck/)** — the game of Snake with every rule
   implemented in pure BrainFuck (76 KB of `+-<>[].,`), playable in the
   browser: the page's only JavaScript is a BrainFuck interpreter feeding it
