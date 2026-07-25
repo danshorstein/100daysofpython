@@ -50,6 +50,13 @@ Each grasshopper gets its own hop budget and one shot per turn — but you
 choose the order, and nothing stops you from firing every last one of them
 before you pass the turn.
 
+## Practice mode
+
+Choose **Practice** from the menu to explore an island without an opponent.
+Your swarm receives every weapon with unlimited ammo, turns have no clock or
+sudden death, and ending a turn immediately starts another player turn. It is
+ideal for learning weapon arcs and seeing how the terrain destruction behaves.
+
 ## The armory
 
 Seventeen weapons, no two mechanically alike:

@@ -71,6 +71,48 @@ def main() -> int:
         )
         assert solid_after > 0, "terrain vanished entirely — worldgen or explode() regressed"
 
+        # Practice mode: no opposing team, unlimited ammo, and each settled
+        # turn returns immediately to the player's swarm.
+        practice_page = browser.new_page(viewport={"width": 900, "height": 620})
+        practice_page.goto(PAGE)
+        practice_page.wait_for_timeout(1200)
+        practice_page.locator("#modeseg button", has_text="Practice").click()
+        practice_page.fill("#seedin", "practice-e2e-seed")
+        practice_page.click("#playbtn")
+        practice_page.wait_for_timeout(2000)
+        practice_state = practice_page.evaluate("""() => ({
+            practice,
+            state: turnState,
+            team: turnTeam,
+            enemies: aliveOf(TEAM_B).length,
+            cricketAmmo: ammo[playerTeam].cricket,
+            infiniteClock: turnClock === Infinity,
+            label: elRound.textContent
+        })""")
+        assert practice_state["practice"], f"Practice flag was not enabled: {practice_state}"
+        assert practice_state["state"] == "play" and practice_state["team"] == practice_page.evaluate("playerTeam"), \
+            f"Practice did not start as a player turn: {practice_state}"
+        assert practice_state["enemies"] == 0, f"Practice spawned enemy units: {practice_state}"
+        assert practice_state["cricketAmmo"] == -1, f"Practice ammo was limited: {practice_state}"
+        assert practice_state["infiniteClock"] and practice_state["label"] == "PRACTICE", \
+            f"Practice HUD/clock was incorrect: {practice_state}"
+
+        practice_page.evaluate("endTurn()")
+        practice_page.wait_for_timeout(600)
+        after_turn = practice_page.evaluate("({state: turnState, team: turnTeam, player: playerTeam})")
+        assert after_turn["state"] == "play" and after_turn["team"] == after_turn["player"], \
+            f"Practice advanced away from the player: {after_turn}"
+
+        practice_page.evaluate("""() => {
+            curWeapon = WBYID.cricket.idx;
+            firePower = 0.8;
+            releaseFire();
+        }""")
+        assert practice_page.evaluate("ammo[playerTeam].cricket") == -1, \
+            "Practice ammo decreased after firing"
+        practice_page.screenshot(path=str(SHOTS / "04_practice_mode.png"))
+        practice_page.close()
+
         browser.close()
 
     if errors:
@@ -79,7 +121,7 @@ def main() -> int:
             print(e, file=sys.stderr)
         return 1
 
-    print("OK — menu, match start, hop, and fire all worked with no console errors.")
+    print("OK — Battle and Practice mode flows worked with no console errors.")
     print(f"Screenshots written to {SHOTS}")
     return 0
 
